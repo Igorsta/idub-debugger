@@ -107,21 +107,6 @@ namespace OpFun {
 	static Fun call;
 };
 
-namespace DbgOp {
-	static Fun init;
-	static Fun deinit;
-	static Fun reg_to_stk;
-	static Fun stk_to_reg;
-	static Fun reg_to_retval;
-	static Fun reg_to_reg;
-	static Fun input_reg;
-	static Fun output_reg;
-	static Fun ret;
-	static Fun exit;
-	static Fun call;
-};
-
-
 
 ///////////////////// PARSING INSTRUCTIONS ////////////////////////////
 
@@ -137,17 +122,6 @@ const unordered_map<string, Fun *> op_name_to_op_impl = {
 	{"ret", &OpFun::ret},
 	{"ext", &OpFun::exit},
 	{"call", &OpFun::call},
-	{"dbg_init", &DbgOp::init},
-	{"dbg_deinit", &DbgOp::deinit},
-	{"dbg_rts", &DbgOp::reg_to_stk},
-	{"dbg_str", &DbgOp::stk_to_reg},
-	{"dbg_rtrv", &DbgOp::reg_to_retval},
-	{"dbg_rtr", &DbgOp::reg_to_reg},
-	{"dbg_ir", &DbgOp::input_reg},
-	{"dbg_or", &DbgOp::output_reg},
-	{"dbg_ret", &DbgOp::ret},
-	{"dbg_ext", &DbgOp::exit},
-	{"dbg_call", &DbgOp::call},
 };
 
 const unordered_map<Fun *, uint8_t> op_impl_to_exp_arg = {
@@ -162,17 +136,6 @@ const unordered_map<Fun *, uint8_t> op_impl_to_exp_arg = {
 	{&OpFun::ret, 0},
 	{&OpFun::exit, 0},
 	{&OpFun::call, 1},
-	{&DbgOp::init, 0},
-	{&DbgOp::deinit, 0},
-	{&DbgOp::reg_to_stk, 1},
-	{&DbgOp::stk_to_reg, 1},
-	{&DbgOp::reg_to_retval, 1},
-	{&DbgOp::reg_to_reg, 2},
-	{&DbgOp::input_reg, 1},
-	{&DbgOp::output_reg, 1},
-	{&DbgOp::ret, 0},
-	{&DbgOp::exit, 0},
-	{&DbgOp::call, 1},
 };
 
 Instruction make_instr(const string& line) {
@@ -435,74 +398,6 @@ void OpFun::ret(OPCODE_ARGS) {
 }
 
 void OpFun::exit(OPCODE_ARGS) {
-	rawFun::exit(FRWARD_ARGS);
-
-	return;
-}
-
-//////////////////////////// OPCODE DEBUG VERSION ////////////////////////////
-
-void DbgOp::init(OPCODE_ARGS) {
-	rawFun::init(FRWARD_ARGS);
-
-	EXEC_NEXT(1);
-}
-
-void DbgOp::deinit(OPCODE_ARGS) {
-	rawFun::deinit(FRWARD_ARGS);
-
-	EXEC_NEXT(1);
-}
-
-void DbgOp::stk_to_reg(OPCODE_ARGS) {
-	rawFun::stk_to_reg(FRWARD_ARGS);
-
-	EXEC_NEXT(1);
-}
-
-void DbgOp::reg_to_stk(OPCODE_ARGS) {
-	rawFun::reg_to_stk(FRWARD_ARGS);
-
-	EXEC_NEXT(1);
-}
-
-void DbgOp::reg_to_retval(OPCODE_ARGS) {
-	rawFun::reg_to_retval(FRWARD_ARGS);
-
-	EXEC_NEXT(1);
-}
-
-void DbgOp::reg_to_reg(OPCODE_ARGS) {
-	rawFun::reg_to_reg(FRWARD_ARGS);
-	
-	EXEC_NEXT(1);
-}
-
-void DbgOp::output_reg(OPCODE_ARGS) {
-	rawFun::output_reg(FRWARD_ARGS);
-
-	EXEC_NEXT(1);
-}
-
-void DbgOp::input_reg(OPCODE_ARGS) {
-	rawFun::input_reg(FRWARD_ARGS);
-
-	EXEC_NEXT(1);
-}
-
-void DbgOp::call(OPCODE_ARGS) {
-	rawFun::call(FRWARD_ARGS);
-
-	EXEC_NEXT(0);
-}
-
-void DbgOp::ret(OPCODE_ARGS) {
-	rawFun::ret(FRWARD_ARGS);
-
-	EXEC_NEXT(0);
-}
-
-void DbgOp::exit(OPCODE_ARGS) {
 	rawFun::exit(FRWARD_ARGS);
 
 	return;
