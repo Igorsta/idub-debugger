@@ -4,9 +4,12 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <format>
+#include <fstream>
 #include <regex>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <sys/types.h>
 #include <unordered_map>
@@ -123,7 +126,7 @@ using label_id = bit64;
 // };
 
 struct {
-	std::unordered_map<std::string, func_id> functions = {{"main", 0}, {"test", 1}}; // temporary change for compilation purpose
+	std::unordered_map<std::string, func_id> functions_id = {{"main", 0}, {"test", 1}}; // temporary change for compilation purpose
 	// std::unordered_map<label_id, code_pos> labels;
 	// uint64_t curr_pos;
 } ctx;
@@ -150,7 +153,7 @@ bit64 parse_arg_t(arg_t type, std::string input) {
 	switch (type) {
 		case arg_t::DECIMAL_NUM: return std::stoull(input);
 		case arg_t::REGISTER_ID: return std::stoull(input);
-		case arg_t::FUNC_NAME: return ctx.functions.emplace(input, ctx.functions.size()).first->second;
+		case arg_t::FUNC_NAME: return ctx.functions_id.emplace(input, ctx.functions_id.size()).first->second;
 		default:
 			assert(false);
 	}
@@ -250,8 +253,27 @@ static const unordered_map<uint64_t, uint64_t> func_id_to_exp_arg = {
     {1, 0},
 };
 
+std::string read_file(std::string file_name) {
+	std::filesystem::path path = std::filesystem::absolute(file_name);
+	std::ifstream file(path);
+	std::string content = {std::istreambuf_iterator<char>(file), {}};
+
+	std::string func_regex = "\\s*fun\\s+" + regex_arg_t(arg_t::FUNC_NAME) + "\\s*:\\s*\\{[^}]*\\}";
+	std::string file_regex = "(" + func_regex + ")*\\s*";
+	std::cout << file_regex << "\n";
+	std::regex code_of_functions(file_regex);
+	std::smatch matches;
+
+	if (std::regex_match(content, code_of_functions)) {
+		return content;
+	}
+
+	throw std::logic_error("Code of wrong format");
+}
+
 void start_execution(MemorySpace& mem_space) {
-	auto instr = func_id_to_code.at(0).data();
+	int main_id = ctx.functions_id.at("main");
+	auto instr = func_id_to_code.at(main_id).data();
 	auto frame = mem_space.STK.get();
     auto memory = &mem_space;
 	
@@ -440,7 +462,14 @@ void OpFun::exit(OPCODE_ARGS) {
 
 MemorySpace global_space = MemorySpace(10, 10, 20);
 
-int main() {
+int main(int argc, const char *argv[]) {
+	std::cout << argc << "\n";
+	if (argc == 2) {
+		std::string file = argv[1];
+		std::cout << file << "\n";
+		std::cout << read_file(file) << "\n";
+	}
+	
 	start_execution(global_space);
 
 	return 0;
