@@ -1,10 +1,15 @@
 #include <bits/stdc++.h>
 #include <cassert>
+#include <complex>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <format>
+#include <regex>
 #include <sstream>
 #include <string>
+#include <sys/types.h>
+#include <unordered_map>
 using namespace std;
 
 ///////////////////// DECLARATIONS ////////////////////////////
@@ -72,11 +77,13 @@ struct MemorySpace {
 
 using Fun = void(OPCODE_ARGS);
 using RawFun = void(REF_OPCODE_ARGS);
+using bit64 = uint64_t;
+
+constexpr size_t args_per_instr = 2;
 
 struct Instruction {
 	Fun *action;
-	size_t arg0;
-	size_t arg1;
+	bit64 arg[args_per_instr];
 };
 
 namespace rawFun {
@@ -107,110 +114,151 @@ namespace OpFun {
 	static Fun call;
 };
 
+using func_id = bit64;
+using label_id = bit64;
+
+// struct code_pos {
+// 	uint64_t pos;
+// 	func_id func;
+// };
+
+struct {
+	std::unordered_map<std::string, func_id> functions = {{"main", 0}, {"test", 1}}; // temporary change for compilation purpose
+	// std::unordered_map<label_id, code_pos> labels;
+	// uint64_t curr_pos;
+} ctx;
 
 ///////////////////// PARSING INSTRUCTIONS ////////////////////////////
 
-const unordered_map<string, Fun *> op_name_to_op_impl = {
-	{"init", &OpFun::init},
-	{"deinit", &OpFun::deinit},
-	{"rts", &OpFun::reg_to_stk},
-	{"str", &OpFun::stk_to_reg},
-	{"rtrv", &OpFun::reg_to_retval},
-	{"rtr", &OpFun::reg_to_reg},
-	{"ir", &OpFun::input_reg},
-	{"or", &OpFun::output_reg},
-	{"ret", &OpFun::ret},
-	{"ext", &OpFun::exit},
-	{"call", &OpFun::call},
+enum class arg_t {
+	DECIMAL_NUM,
+	REGISTER_ID,
+	FUNC_NAME,
 };
 
-const unordered_map<Fun *, uint8_t> op_impl_to_exp_arg = {
-	{&OpFun::init, 0},
-	{&OpFun::deinit, 0},
-	{&OpFun::reg_to_stk, 1},
-	{&OpFun::stk_to_reg, 1},
-	{&OpFun::reg_to_retval, 1},
-	{&OpFun::reg_to_reg, 2},
-	{&OpFun::input_reg, 1},
-	{&OpFun::output_reg, 1},
-	{&OpFun::ret, 0},
-	{&OpFun::exit, 0},
-	{&OpFun::call, 1},
+std::string regex_arg_t(const arg_t& arg) {
+	switch (arg) {
+		case arg_t::DECIMAL_NUM: return "(\\d+)";
+		case arg_t::REGISTER_ID: return "\\$(\\d+)";
+		case arg_t::FUNC_NAME: return "([A-Za-z0-9_]+)";
+		default:
+			assert(false);			
+	}
+};
+
+bit64 parse_arg_t(arg_t type, std::string input) {
+	switch (type) {
+		case arg_t::DECIMAL_NUM: return std::stoull(input);
+		case arg_t::REGISTER_ID: return std::stoull(input);
+		case arg_t::FUNC_NAME: return ctx.functions.emplace(input, ctx.functions.size()).first->second;
+		default:
+			assert(false);
+	}
+};
+
+std::string to_string(arg_t c) {
+    switch (c) {
+        case arg_t::DECIMAL_NUM:	return "Decimal";
+        case arg_t::REGISTER_ID:	return "Register";
+        case arg_t::FUNC_NAME:		return "Function";
+        default:					return "WTF?";
+    }
+}
+
+template <std::same_as<arg_t>... ArgsT>
+std::pair<std::regex, std::function<Instruction(std::smatch)>> make_opcode(std::string op_name, RawFun* code, ArgsT... args_t) {
+	std::string ans = "\\s*" + op_name;
+
+	(ans += ... += ("\\s+" + regex_arg_t(args_t) + ","));
+	if (sizeof...(args_t) != 0) {
+		ans.pop_back(); 		// removing last "," if present
+	}
+	ans += "\\s*(?:#.*)?";	// komentarze są dozwolone
+
+	auto converter = [=](const std::smatch &match) -> Instruction {
+		Instruction instr;
+		instr.action = code;
+		for (size_t i = 0; i < args_per_instr; i++) {
+			instr.arg[i] = 0;
+		}
+
+		std::cout << sizeof...(args_t) << "\n";
+		((std::cout << to_string(args_t) << " "), ...);
+		std::cout << "\n";
+
+		int i = 0;
+		((instr.arg[i] = parse_arg_t(args_t, match[i + 1]), ++i, true) && ...);
+
+		return instr;
+	};
+
+	std::cout << op_name << " -> \"" << ans << "\"\n";
+
+	return {std::regex(ans), converter};
+}
+
+std::vector<std::pair<std::regex, std::function<Instruction(std::smatch)>>> opcodes = {
+    make_opcode("init", &OpFun::init),
+    make_opcode("deinit", &OpFun::deinit),
+    make_opcode("rts", &OpFun::reg_to_stk, arg_t::REGISTER_ID),
+    make_opcode("str", &OpFun::stk_to_reg, arg_t::REGISTER_ID),
+    make_opcode("rtrv", &OpFun::reg_to_retval, arg_t::REGISTER_ID),
+    make_opcode("rtr", &OpFun::reg_to_reg, arg_t::REGISTER_ID, arg_t::REGISTER_ID),
+    make_opcode("ir", &OpFun::input_reg, arg_t::REGISTER_ID),
+    make_opcode("or", &OpFun::output_reg, arg_t::REGISTER_ID),
+    make_opcode("ret", &OpFun::ret),
+    make_opcode("ext", &OpFun::exit),
+    make_opcode("call", &OpFun::call, arg_t::FUNC_NAME),
 };
 
 Instruction make_instr(const string& line) {
-	stringstream input(line);
-	string cmd;
-
-	input >> cmd;
-
-	if (cmd.empty()) {
-		throw std::runtime_error("Parsing Error: Empty line encountered.");
-	}
-
-	auto it = op_name_to_op_impl.find(cmd);
-	if (it == op_name_to_op_impl.end()) {
-		throw std::runtime_error("Parsing Error: Unknown command '" + cmd + "'");
-	}
-
-	auto [_, f] = *it;
-	size_t no_of_args = op_impl_to_exp_arg.at(f);
-	uint64_t arg[2] = {0, 0};
-
-	for (size_t i = 0; i < no_of_args; i++) {
-		if (!(input >> arg[i])) {
-			throw std::runtime_error(format(
-				"Parsing Error: Command '{}' expects {} numerical argument(s), "
-				"but failed to parse argument #{}.",
-				cmd, no_of_args, i + 1
-			));
+	std::smatch matches;
+	for (auto &[pattern, func] : opcodes) {
+		std::cout << "\"" << line << "\"\n";
+		if (std::regex_match(line, matches, pattern)) {
+			std::cout << "matched!\n";
+			return func(matches);
 		}
 	}
 
-	string extra_token;
-	if (input >> extra_token) {
-		throw std::runtime_error("Parsing Error: Too many arguments for command '" + cmd +
-									"'. Expected " + std::to_string(no_of_args) + ".");
-	}
-
-	return { op_name_to_op_impl.at(cmd), arg[0], arg[1] };
+	assert(false);
 }
 
-static const unordered_map<uint64_t, Code> func_id_to_code = {
+static const unordered_map<func_id, Code> func_id_to_code = {
     {0,
      {
-         make_instr("ir 0"),
+         make_instr("ir $0"),
          make_instr("init"),
          make_instr("init"),
-         make_instr("call 1"),
-         make_instr("str 1"),
+         make_instr("call test"),
+         make_instr("str $1"),
 		 make_instr("deinit"),
-		 make_instr("or 1"),
-         make_instr("rtrv 0"),
+		 make_instr("or $1"),
+         make_instr("rtrv $0"),
          make_instr("ext"),
      }},
     {1,
      {
-         make_instr("ir 2"),
+         make_instr("ir $2"),
          make_instr("init"),
-         make_instr("rts 2"),
-		 make_instr("ir 2"),
+         make_instr("rts $2"),
+		 make_instr("ir $2"),
 		 make_instr("init"),
-         make_instr("rts 2"),
-		 make_instr("ir 2"),
+         make_instr("rts $2"),
+		 make_instr("ir $2"),
 		 make_instr("init"),
-         make_instr("rts 2"),
-         make_instr("str 3"),
+         make_instr("rts $2"),
+         make_instr("str $3"),
          make_instr("deinit"),
-         make_instr("str 4"),
+         make_instr("str $4"),
          make_instr("deinit"),
-         make_instr("str 5"),
+         make_instr("str $5"),
          make_instr("deinit"),
-         make_instr("or 3"),
-         make_instr("or 4"),
-         make_instr("or 5"),
-		 make_instr("ir 2"),
-         make_instr("rtrv 2"),
+         make_instr("or $3"),
+         make_instr("or $4"),
+         make_instr("or $5"),
+		 make_instr("ir $2"),
+         make_instr("rtrv $2"),
          make_instr("ret"),
      }}
 };
@@ -250,22 +298,22 @@ inline __attribute__((always_inline)) void rawFun::deinit(REF_OPCODE_ARGS) {
 }
 
 inline __attribute__((always_inline)) void rawFun::reg_to_stk(REF_OPCODE_ARGS) {
-	auto arg0 = instr->arg0;
+	auto arg0 = instr->arg[0];
 	assert(arg0 < mem_space->REG_SIZE);
     
 	*stk_top(FRWARD_ARGS) = mem_space->REG[arg0];
 }
 
 inline __attribute__((always_inline)) void rawFun::stk_to_reg(REF_OPCODE_ARGS) {
-	auto arg0 = instr->arg0;
+	auto arg0 = instr->arg[0];
 	assert(arg0 < mem_space->REG_SIZE);
 
 	mem_space->REG[arg0] = *stk_top(FRWARD_ARGS);
 }
 
 inline __attribute__((always_inline)) void rawFun::reg_to_reg(REF_OPCODE_ARGS) {
-	auto arg0 = instr->arg0;
-	auto arg1 = instr->arg1;
+	auto arg0 = instr->arg[0];
+	auto arg1 = instr->arg[1];
 	assert(arg0 < mem_space->REG_SIZE);
 	assert(arg1 < mem_space->REG_SIZE);
 
@@ -273,14 +321,14 @@ inline __attribute__((always_inline)) void rawFun::reg_to_reg(REF_OPCODE_ARGS) {
 }
 
 inline __attribute__((always_inline)) void rawFun::reg_to_retval(REF_OPCODE_ARGS) {
-	auto arg0 = instr->arg0;
+	auto arg0 = instr->arg[0];
 	assert(arg0 < mem_space->REG_SIZE);
     
 	*frame->stack_start = mem_space->REG[arg0];
 }
 
 inline __attribute__((always_inline)) void rawFun::input_reg(REF_OPCODE_ARGS) {
-	auto arg0 = instr->arg0;
+	auto arg0 = instr->arg[0];
 	assert(arg0 < mem_space->REG_SIZE);
 
 	size_t val;
@@ -290,14 +338,14 @@ inline __attribute__((always_inline)) void rawFun::input_reg(REF_OPCODE_ARGS) {
 }
 
 inline __attribute__((always_inline)) void rawFun::output_reg(REF_OPCODE_ARGS) {
-	auto arg0 = instr->arg0;
+	auto arg0 = instr->arg[0];
 	assert(arg0 < mem_space->REG_SIZE);
 
 	cout << mem_space->REG[arg0] << endl;
 }
 
 inline __attribute__((always_inline)) void rawFun::call(REF_OPCODE_ARGS) {
-	auto arg0 = instr->arg0;
+	auto arg0 = instr->arg[0];
 	auto it = func_id_to_code.find(arg0);
 	assert(it != func_id_to_code.end());
 
@@ -402,6 +450,8 @@ void OpFun::exit(OPCODE_ARGS) {
 
 	return;
 }
+
+
 
 //////////////////////////// OPCODE NORMAL VERSION ////////////////////////////
 
