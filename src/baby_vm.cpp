@@ -174,7 +174,7 @@ constexpr std::string regex_arg_t(const arg_t &arg) {
 };
 
 constexpr std::string regex_func() {
-	return "\\s*fun\\s+" + regex_arg_t(arg_t::FUNC_NAME) + "\\((\\d+)\\)\\s*:\\s*\\{([^}]*)\\}";
+	return "\\s*fun\\s+" + regex_arg_t(arg_t::FUNC_NAME) + "\\(\\s*(\\d+)\\s*\\)\\s*:\\s*\\{([^}]*)\\}";
 }
 
 constexpr bit64 parse_arg_t(func_id_map &functions_id, arg_t type, std::string input) {
@@ -290,8 +290,6 @@ std::string read_file(std::string file_name) {
 	std::regex code_of_functions("(" + regex_func() + ")*\\s*");
 	std::smatch matches;
 
-	std::cout << "(" + regex_func() + ")*\\s*" << "\n";
-
 	if (!std::regex_match(content, code_of_functions)) {
 		throw std::logic_error("Code of wrong format");
 	}
@@ -313,11 +311,6 @@ program_t file_parse(std::string &content) {
 	for (auto it = func_begin; it != func_end; it++) {
 		const std::smatch &matches = *it;
 		
-		std::cout << matches.size() << "\n";
-		for (size_t i = 0; i < matches.size(); i++) {
-			std::cout << i << ":\n\"" << matches[i] << "\"\n";
-		}
-		
 		code_block function_body = {};
 		func_name = matches[1];
 		func_id = name_of_functions.emplace(func_name, name_of_functions.size()).first->second;
@@ -326,7 +319,6 @@ program_t file_parse(std::string &content) {
 		std::stringstream code(matches[3]);
 		static std::string line;
 		while (getline(code, line)) {
-			std::cout << "\"" << line << "\"\n";
 			auto instr = make_instr(name_of_functions, line);
 
 			if (!instr.has_value()) {
@@ -538,17 +530,16 @@ void OpFun::exit(OPCODE_ARGS) {
 //////////////////////////// OPCODE NORMAL VERSION ////////////////////////////
 
 int main(int argc, const char *argv[]) {
-	if (argc == 2) {
-		std::string file = argv[1];
-		std::string file_content = read_file(file);
-
-		file_parse(file_content);
+	if (argc != 2) {
+		throw std::runtime_error("the usage: " + std::string(argv[0]) + " <file name>");
 	}
+	
+	std::string file = argv[1];
+	std::string file_content = read_file(file);
 
-	program_t working_program = {
-		.functions = functions, .func_id = ctx.functions_id, .memory = memory_space(10, 10, 20)};
+	program_t maybe_working_program = file_parse(file_content);
 
-	start_execution(working_program);
+	start_execution(maybe_working_program);
 
 	return 0;
 }
