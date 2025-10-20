@@ -156,15 +156,6 @@ bit64 parse_arg_t(arg_t type, std::string input) {
 	}
 };
 
-std::string to_string(arg_t c) {
-    switch (c) {
-        case arg_t::DECIMAL_NUM:	return "Decimal";
-        case arg_t::REGISTER_ID:	return "Register";
-        case arg_t::FUNC_NAME:		return "Function";
-        default:					return "WTF?";
-    }
-}
-
 template <std::same_as<arg_t>... ArgsT>
 std::pair<std::regex, std::function<Instruction(std::smatch)>> make_opcode(std::string op_name, RawFun* code, ArgsT... args_t) {
 	std::string ans = "\\s*" + op_name;
@@ -182,17 +173,11 @@ std::pair<std::regex, std::function<Instruction(std::smatch)>> make_opcode(std::
 			instr.arg[i] = 0;
 		}
 
-		std::cout << sizeof...(args_t) << "\n";
-		((std::cout << to_string(args_t) << " "), ...);
-		std::cout << "\n";
-
 		int i = 0;
 		((instr.arg[i] = parse_arg_t(args_t, match[i + 1]), ++i, true) && ...);
 
 		return instr;
 	};
-
-	std::cout << op_name << " -> \"" << ans << "\"\n";
 
 	return {std::regex(ans), converter};
 }
@@ -214,9 +199,7 @@ std::vector<std::pair<std::regex, std::function<Instruction(std::smatch)>>> opco
 Instruction make_instr(const string& line) {
 	std::smatch matches;
 	for (auto &[pattern, func] : opcodes) {
-		std::cout << "\"" << line << "\"\n";
 		if (std::regex_match(line, matches, pattern)) {
-			std::cout << "matched!\n";
 			return func(matches);
 		}
 	}
