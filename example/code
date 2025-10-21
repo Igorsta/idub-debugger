@@ -1,0 +1,36 @@
+fun main(0): {
+	ir $0
+	init
+	init
+	call test
+	str $1
+	deinit
+	or $1
+	rtrv $0
+	ext
+}
+
+fun test(0): {
+
+	ir $2
+	init
+	rts $2
+	ir $2
+	init
+	rts $2
+	ir $2
+	init
+	rts $2
+	str $3
+	deinit
+	str $4
+	deinit
+	str $5
+	deinit
+	or $3
+	or $4
+	or $5
+	ir $2
+	rtrv $2
+	ret
+}
