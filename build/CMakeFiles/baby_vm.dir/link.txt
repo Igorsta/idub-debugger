@@ -1,1 +1,0 @@
-/usr/bin/c++ CMakeFiles/baby_vm.dir/src/baby_vm.cpp.o -o baby_vm 

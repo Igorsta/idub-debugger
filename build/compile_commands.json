@@ -1,8 +1,0 @@
-[
-{
-  "directory": "/home/duckduck/DUCKLING/IDUB/build",
-  "command": "/usr/bin/c++   -std=gnu++20 -o CMakeFiles/baby_vm.dir/src/baby_vm.cpp.o -c /home/duckduck/DUCKLING/IDUB/src/baby_vm.cpp",
-  "file": "/home/duckduck/DUCKLING/IDUB/src/baby_vm.cpp",
-  "output": "CMakeFiles/baby_vm.dir/src/baby_vm.cpp.o"
-}
-]
