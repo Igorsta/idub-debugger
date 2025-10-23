@@ -1,6 +1,5 @@
 #include <bits/stdc++.h>
 #include <cassert>
-#include <complex>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
@@ -24,23 +23,23 @@ struct function_t;
 
 ///////////////////// MACRO MAGIC ////////////////////////////
 
-#define EXEC(instr, mem_space, frame) instr->action(instr, mem_space, frame)
+#define EXEC(instr, mem_space, frame, program) instr->action(instr, mem_space, frame, program)
 
-#define OPCODE_ARGS                                                                                                    \
-	[[maybe_unused]] const instrutction_t *&instr, [[maybe_unused]] memory_space *&mem_space,                          \
-		[[maybe_unused]] frame_t *&frame
-#define REF_OPCODE_ARGS                                                                                                \
-	[[maybe_unused]] const instrutction_t *&instr, [[maybe_unused]] memory_space *&mem_space,                          \
-		[[maybe_unused]] frame_t *&frame
-#define CONST_OPCODE_ARGS                                                                                              \
-	[[maybe_unused]] const instrutction_t *instr, [[maybe_unused]] const memory_space *mem_space,                      \
-		[[maybe_unused]] const frame_t *frame
-#define FRWARD_ARGS instr, mem_space, frame
+#define OPCODE_ARGS                                                                                \
+	[[maybe_unused]] const instrutction_t *&instr, [[maybe_unused]] memory_space *&mem_space,      \
+		[[maybe_unused]] frame_t *&frame, [[maybe_unused]] program_t *exec_program
+#define REF_OPCODE_ARGS                                                                            \
+	[[maybe_unused]] const instrutction_t *&instr, [[maybe_unused]] memory_space *&mem_space,      \
+		[[maybe_unused]] frame_t *&frame, [[maybe_unused]] program_t *exec_program
+#define CONST_OPCODE_ARGS                                                                          \
+	[[maybe_unused]] const instrutction_t *instr, [[maybe_unused]] const memory_space *mem_space,  \
+		[[maybe_unused]] const frame_t *frame, [[maybe_unused]] const program_t *exec_program
+#define FRWARD_ARGS instr, mem_space, frame, exec_program
 
-#define EXEC_NEXT(step)                                                                                                \
-	instr += step;                                                                                                     \
-	MUST_TAIL return EXEC(instr, mem_space, frame)
-#define EXEC_START(instr, mem_space, frame) EXEC(program, mem_space, frame)
+#define EXEC_NEXT(step)                                                                            \
+	instr += step;                                                                                 \
+	MUST_TAIL return EXEC(instr, mem_space, frame, exec_program)
+#define EXEC_START(instr, mem_space, frame, program) EXEC(instr, mem_space, frame, program)
 
 #if defined(__clang__) && __clang__ >= 13
 #define MUST_TAIL [[clang::musttail]]
@@ -88,11 +87,13 @@ struct memory_space {
 	std::unique_ptr<uint64_t[]> REGISTERS;
 	std::unique_ptr<frame_t[]> CALL_STACK;
 
-	memory_space(size_t MEM_STACK_SIZE = 0, size_t REGISTERS_SIZE = 0, size_t CALL_STACK_SIZE = 0)
-		: MEM_STACK_SIZE(MEM_STACK_SIZE), REGISTERS_SIZE(REGISTERS_SIZE), CALL_STACK_SIZE(CALL_STACK_SIZE),
-		  MEM_STACK(std::make_unique<uint64_t[]>(MEM_STACK_SIZE)),
-		  REGISTERS(std::make_unique<uint64_t[]>(REGISTERS_SIZE)),
-		  CALL_STACK(std::make_unique<frame_t[]>(CALL_STACK_SIZE)) {
+	memory_space(size_t MEM_STACK_SIZE = 0, size_t REGISTERS_SIZE = 0, size_t CALL_STACK_SIZE = 0) :
+		MEM_STACK_SIZE(MEM_STACK_SIZE),
+		REGISTERS_SIZE(REGISTERS_SIZE),
+		CALL_STACK_SIZE(CALL_STACK_SIZE),
+		MEM_STACK(std::make_unique<uint64_t[]>(MEM_STACK_SIZE)),
+		REGISTERS(std::make_unique<uint64_t[]>(REGISTERS_SIZE)),
+		CALL_STACK(std::make_unique<frame_t[]>(CALL_STACK_SIZE)) {
 		assert(MEM_STACK && REGISTERS && CALL_STACK);
 	}
 };
@@ -147,7 +148,8 @@ static Fun call;
 // };
 
 struct {
-	func_id_map functions_id = {{"main", 0}, {"test", 1}}; // temporary change for compilation purpose
+	func_id_map functions_id = {{"main", 0}, {"test", 1}};
+	// temporary change for compilation purpose
 	// std::unordered_map<label_id, code_pos> labels;
 	// uint64_t curr_pos;
 } ctx;
@@ -174,7 +176,8 @@ constexpr std::string regex_arg_t(const arg_t &arg) {
 };
 
 constexpr std::string regex_func() {
-	return "\\s*fun\\s+" + regex_arg_t(arg_t::FUNC_NAME) + "\\(\\s*(\\d+)\\s*\\)\\s*:\\s*\\{([^}]*)\\}";
+	return "\\s*fun\\s+" + regex_arg_t(arg_t::FUNC_NAME) + "\\s*\\(\\s*" +
+		   regex_arg_t(arg_t::DECIMAL_NUM) + "\\s*\\)\\s*:" + "\\s*\\{([^}]*)\\}";
 }
 
 constexpr bit64 parse_arg_t(func_id_map &functions_id, arg_t type, std::string input) {
@@ -201,7 +204,8 @@ make_opcode(std::string op_name, RawFun *code, ArgsT... args_t) {
 	}
 	ans += "\\s*(?:#.*)?"; // komentarze są dozwolone
 
-	auto converter = [code, args_t...](func_id_map &functions_id, const std::smatch &match) -> instrutction_t {
+	auto converter = [code, args_t...](func_id_map &functions_id,
+									   const std::smatch &match) -> instrutction_t {
 		instrutction_t instr;
 		instr.action = code;
 		for (size_t i = 0; i < args_per_instr; i++) {
@@ -217,18 +221,19 @@ make_opcode(std::string op_name, RawFun *code, ArgsT... args_t) {
 	return {std::regex(ans), converter};
 }
 
-std::vector<std::pair<std::regex, std::function<instrutction_t(func_id_map &, std::smatch)>>> opcodes = {
-	make_opcode("init", &OpFun::init),
-	make_opcode("deinit", &OpFun::deinit),
-	make_opcode("rts", &OpFun::reg_to_stk, arg_t::REGISTER_ID),
-	make_opcode("str", &OpFun::stk_to_reg, arg_t::REGISTER_ID),
-	make_opcode("rtrv", &OpFun::reg_to_retval, arg_t::REGISTER_ID),
-	make_opcode("rtr", &OpFun::reg_to_reg, arg_t::REGISTER_ID, arg_t::REGISTER_ID),
-	make_opcode("ir", &OpFun::input_reg, arg_t::REGISTER_ID),
-	make_opcode("or", &OpFun::output_reg, arg_t::REGISTER_ID),
-	make_opcode("ret", &OpFun::ret),
-	make_opcode("ext", &OpFun::exit),
-	make_opcode("call", &OpFun::call, arg_t::FUNC_NAME),
+std::vector<std::pair<std::regex, std::function<instrutction_t(func_id_map &, std::smatch)>>>
+	opcodes = {
+		make_opcode("init", &OpFun::init),
+		make_opcode("deinit", &OpFun::deinit),
+		make_opcode("rts", &OpFun::reg_to_stk, arg_t::REGISTER_ID),
+		make_opcode("str", &OpFun::stk_to_reg, arg_t::REGISTER_ID),
+		make_opcode("rtrv", &OpFun::reg_to_retval, arg_t::REGISTER_ID),
+		make_opcode("rtr", &OpFun::reg_to_reg, arg_t::REGISTER_ID, arg_t::REGISTER_ID),
+		make_opcode("ir", &OpFun::input_reg, arg_t::REGISTER_ID),
+		make_opcode("or", &OpFun::output_reg, arg_t::REGISTER_ID),
+		make_opcode("ret", &OpFun::ret),
+		make_opcode("ext", &OpFun::exit),
+		make_opcode("call", &OpFun::call, arg_t::FUNC_NAME),
 };
 
 std::optional<instrutction_t> make_instr(func_id_map &func_id, const std::string &line) {
@@ -265,16 +270,26 @@ static func_map functions = {
 	 {
 		 .body =
 			 {
-				 make_instr(ctx.functions_id, "ir $2").value(),	 make_instr(ctx.functions_id, "init").value(),
-				 make_instr(ctx.functions_id, "rts $2").value(), make_instr(ctx.functions_id, "ir $2").value(),
-				 make_instr(ctx.functions_id, "init").value(),	 make_instr(ctx.functions_id, "rts $2").value(),
-				 make_instr(ctx.functions_id, "ir $2").value(),	 make_instr(ctx.functions_id, "init").value(),
-				 make_instr(ctx.functions_id, "rts $2").value(), make_instr(ctx.functions_id, "str $3").value(),
-				 make_instr(ctx.functions_id, "deinit").value(), make_instr(ctx.functions_id, "str $4").value(),
-				 make_instr(ctx.functions_id, "deinit").value(), make_instr(ctx.functions_id, "str $5").value(),
-				 make_instr(ctx.functions_id, "deinit").value(), make_instr(ctx.functions_id, "or $3").value(),
-				 make_instr(ctx.functions_id, "or $4").value(),	 make_instr(ctx.functions_id, "or $5").value(),
-				 make_instr(ctx.functions_id, "ir $2").value(),	 make_instr(ctx.functions_id, "rtrv $2").value(),
+				 make_instr(ctx.functions_id, "ir $2").value(),
+				 make_instr(ctx.functions_id, "init").value(),
+				 make_instr(ctx.functions_id, "rts $2").value(),
+				 make_instr(ctx.functions_id, "ir $2").value(),
+				 make_instr(ctx.functions_id, "init").value(),
+				 make_instr(ctx.functions_id, "rts $2").value(),
+				 make_instr(ctx.functions_id, "ir $2").value(),
+				 make_instr(ctx.functions_id, "init").value(),
+				 make_instr(ctx.functions_id, "rts $2").value(),
+				 make_instr(ctx.functions_id, "str $3").value(),
+				 make_instr(ctx.functions_id, "deinit").value(),
+				 make_instr(ctx.functions_id, "str $4").value(),
+				 make_instr(ctx.functions_id, "deinit").value(),
+				 make_instr(ctx.functions_id, "str $5").value(),
+				 make_instr(ctx.functions_id, "deinit").value(),
+				 make_instr(ctx.functions_id, "or $3").value(),
+				 make_instr(ctx.functions_id, "or $4").value(),
+				 make_instr(ctx.functions_id, "or $5").value(),
+				 make_instr(ctx.functions_id, "ir $2").value(),
+				 make_instr(ctx.functions_id, "rtrv $2").value(),
 				 make_instr(ctx.functions_id, "ret").value(),
 			 },
 		 .no_of_args = 0,
@@ -310,7 +325,7 @@ program_t file_parse(std::string &content) {
 
 	for (auto it = func_begin; it != func_end; it++) {
 		const std::smatch &matches = *it;
-		
+
 		code_block function_body = {};
 		func_name = matches[1];
 		func_id = name_of_functions.emplace(func_name, name_of_functions.size()).first->second;
@@ -354,7 +369,7 @@ void start_execution(program_t &prog) {
 	frame->stack_head = prog.memory.MEM_STACK.get();
 	frame->stack_start = prog.memory.MEM_STACK.get();
 
-	instr->action(instr, memory, frame);
+	EXEC_START(instr, memory, frame, &prog);
 }
 
 //////////////////////////// OPCODE ACTION IMPLEMENTATION ////////////////////////////
@@ -371,7 +386,9 @@ inline __attribute__((always_inline)) void rawFun::init(REF_OPCODE_ARGS) {
 	frame->stack_head++;
 }
 
-inline __attribute__((always_inline)) void rawFun::deinit(REF_OPCODE_ARGS) { frame->stack_head = stk_top(FRWARD_ARGS); }
+inline __attribute__((always_inline)) void rawFun::deinit(REF_OPCODE_ARGS) {
+	frame->stack_head = stk_top(FRWARD_ARGS);
+}
 
 inline __attribute__((always_inline)) void rawFun::reg_to_stk(REF_OPCODE_ARGS) {
 	auto arg0 = instr->arg[0];
@@ -533,7 +550,7 @@ int main(int argc, const char *argv[]) {
 	if (argc != 2) {
 		throw std::runtime_error("the usage: " + std::string(argv[0]) + " <file name>");
 	}
-	
+
 	std::string file = argv[1];
 	std::string file_content = read_file(file);
 

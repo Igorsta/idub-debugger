@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.10)
 
-set(CMAKE_CXX_STANDARD 20)          # use C++20
+set(CMAKE_CXX_STANDARD 23)          # use C++20
 set(CMAKE_CXX_STANDARD_REQUIRED ON) # fail if C++20 not supported
 
 file(GLOB SOURCES_EXP "src/experimental/*.cpp")
@@ -11,3 +11,5 @@ message(STATUS "Sources for vm: ${SOURCES_VM}")  # optional, debug
 
 add_executable(exp ${SOURCES_EXP})
 add_executable(baby_vm ${SOURCES_VM})
+
+add_subdirectory(src/sanity_check)
