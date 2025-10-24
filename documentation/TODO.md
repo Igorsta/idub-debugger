@@ -1,8 +1,13 @@
+0. Disclaimer
+	- wykorzystywane z Ducklinga: __pragma DIAGNOSTICS, MUST_INLINE, INLINE, opcode functions__
+	- spis rzecz
+
 1. Dotychczasowe maszyny wirtualne:
 	- GDB
 	- LLDB
 	- ocamldebug
 	- PDB
+	- JDB
 
 2. Szczegóły techniczne maszyny:
 	- maszyna stosowa czy rejestrowa: __rejestrowa__
