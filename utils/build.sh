@@ -6,6 +6,8 @@ source ./get_to_root.sh
 
 mkdir -p build
 cd build
+CC=/usr/bin/gcc
+CXX=/usr/bin/g++ 
 cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON ..
 cmake --build .
 cd ..

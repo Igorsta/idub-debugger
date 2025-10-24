@@ -12,6 +12,8 @@
 #include <string>
 #include <sys/types.h>
 #include <unordered_map>
+#include "musttail.h"
+#include "inline.h"
 
 ///////////////////// DECLARATIONS ////////////////////////////
 
@@ -41,14 +43,6 @@ struct function_t;
 	MUST_TAIL return EXEC(instr, mem_space, frame, exec_program)
 #define EXEC_START(instr, mem_space, frame, program) EXEC(instr, mem_space, frame, program)
 
-#if defined(__clang__) && __clang__ >= 13
-#define MUST_TAIL [[clang::musttail]]
-#elif defined(__GNUG__) && __GNUG__ >= 15
-#define MUST_TAIL [[gnu::musttail]]
-#else
-#define MUST_TAIL
-#warning "Using tailcalls without a support from compiler"
-#endif
 
 ///////////////////// USINGS ////////////////////////////
 
@@ -374,37 +368,37 @@ void start_execution(program_t &prog) {
 
 //////////////////////////// OPCODE ACTION IMPLEMENTATION ////////////////////////////
 
-static inline __attribute__((always_inline)) uint64_t *stk_top(CONST_OPCODE_ARGS) {
+INLINE static uint64_t *stk_top(CONST_OPCODE_ARGS) {
 	assert(frame->stack_start < frame->stack_head);
 	return (frame->stack_head - 1);
 }
 
-inline __attribute__((always_inline)) void rawFun::init(REF_OPCODE_ARGS) {
+INLINE void rawFun::init(REF_OPCODE_ARGS) {
 	auto end = mem_space->MEM_STACK.get() + mem_space->MEM_STACK_SIZE;
 	assert(frame->stack_head + 1 < end);
 
 	frame->stack_head++;
 }
 
-inline __attribute__((always_inline)) void rawFun::deinit(REF_OPCODE_ARGS) {
+INLINE void rawFun::deinit(REF_OPCODE_ARGS) {
 	frame->stack_head = stk_top(FRWARD_ARGS);
 }
 
-inline __attribute__((always_inline)) void rawFun::reg_to_stk(REF_OPCODE_ARGS) {
+INLINE void rawFun::reg_to_stk(REF_OPCODE_ARGS) {
 	auto arg0 = instr->arg[0];
 	assert(arg0 < mem_space->REGISTERS_SIZE);
 
 	*stk_top(FRWARD_ARGS) = mem_space->REGISTERS[arg0];
 }
 
-inline __attribute__((always_inline)) void rawFun::stk_to_reg(REF_OPCODE_ARGS) {
+INLINE void rawFun::stk_to_reg(REF_OPCODE_ARGS) {
 	auto arg0 = instr->arg[0];
 	assert(arg0 < mem_space->REGISTERS_SIZE);
 
 	mem_space->REGISTERS[arg0] = *stk_top(FRWARD_ARGS);
 }
 
-inline __attribute__((always_inline)) void rawFun::reg_to_reg(REF_OPCODE_ARGS) {
+INLINE void rawFun::reg_to_reg(REF_OPCODE_ARGS) {
 	auto arg0 = instr->arg[0];
 	auto arg1 = instr->arg[1];
 	assert(arg0 < mem_space->REGISTERS_SIZE);
@@ -413,14 +407,14 @@ inline __attribute__((always_inline)) void rawFun::reg_to_reg(REF_OPCODE_ARGS) {
 	mem_space->REGISTERS[arg1] = mem_space->REGISTERS[arg0];
 }
 
-inline __attribute__((always_inline)) void rawFun::reg_to_retval(REF_OPCODE_ARGS) {
+INLINE void rawFun::reg_to_retval(REF_OPCODE_ARGS) {
 	auto arg0 = instr->arg[0];
 	assert(arg0 < mem_space->REGISTERS_SIZE);
 
 	*frame->stack_start = mem_space->REGISTERS[arg0];
 }
 
-inline __attribute__((always_inline)) void rawFun::input_reg(REF_OPCODE_ARGS) {
+INLINE void rawFun::input_reg(REF_OPCODE_ARGS) {
 	auto arg0 = instr->arg[0];
 	assert(arg0 < mem_space->REGISTERS_SIZE);
 
@@ -430,14 +424,14 @@ inline __attribute__((always_inline)) void rawFun::input_reg(REF_OPCODE_ARGS) {
 	mem_space->REGISTERS[arg0] = val;
 }
 
-inline __attribute__((always_inline)) void rawFun::output_reg(REF_OPCODE_ARGS) {
+INLINE void rawFun::output_reg(REF_OPCODE_ARGS) {
 	auto arg0 = instr->arg[0];
 	assert(arg0 < mem_space->REGISTERS_SIZE);
 
 	std::cout << mem_space->REGISTERS[arg0] << std::endl;
 }
 
-inline __attribute__((always_inline)) void rawFun::call(REF_OPCODE_ARGS) {
+INLINE void rawFun::call(REF_OPCODE_ARGS) {
 	auto arg0 = instr->arg[0];
 	auto it = functions.find(arg0);
 	assert(it != functions.end());
@@ -460,7 +454,7 @@ inline __attribute__((always_inline)) void rawFun::call(REF_OPCODE_ARGS) {
 	instr = func_code.body.data();
 }
 
-inline __attribute__((always_inline)) void rawFun::ret(REF_OPCODE_ARGS) {
+INLINE void rawFun::ret(REF_OPCODE_ARGS) {
 	auto end = mem_space->MEM_STACK.get() + mem_space->MEM_STACK_SIZE;
 	assert(frame->stack_start + 1 < end);
 
@@ -469,7 +463,7 @@ inline __attribute__((always_inline)) void rawFun::ret(REF_OPCODE_ARGS) {
 	instr = frame->instr;
 }
 
-inline __attribute__((always_inline)) void rawFun::exit(REF_OPCODE_ARGS) {
+INLINE void rawFun::exit(REF_OPCODE_ARGS) {
 	assert(frame->stack_head == mem_space->MEM_STACK.get() + 1);
 	assert(frame == mem_space->CALL_STACK.get());
 

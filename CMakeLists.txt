@@ -1,15 +1,27 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.15)
 
-set(CMAKE_CXX_STANDARD 23)          # use C++20
-set(CMAKE_CXX_STANDARD_REQUIRED ON) # fail if C++20 not supported
+project(IDUB_Swiss_VM CXX)
 
-file(GLOB SOURCES_EXP "src/experimental/*.cpp")
-file(GLOB SOURCES_VM "src/vm/*.cpp")
+set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD_REQUIRED True)
 
-message(STATUS "Sources for experiment: ${SOURCES_EXP}")  # optional, debug
-message(STATUS "Sources for vm: ${SOURCES_VM}")  # optional, debug
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
-add_executable(exp ${SOURCES_EXP})
-add_executable(baby_vm ${SOURCES_VM})
+add_library(common_code INTERFACE)
 
-add_subdirectory(src/sanity_check)
+target_include_directories(common_code INTERFACE
+    ${CMAKE_CURRENT_SOURCE_DIR}/common
+)
+
+file(GLOB_RECURSE MAIN_SOURCES
+    CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/vm/src/*.cpp"
+)
+
+add_executable(my_vm ${MAIN_SOURCES})
+
+target_link_libraries(my_vm PRIVATE common_code)
+
+add_subdirectory(experimental)

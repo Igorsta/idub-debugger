@@ -9,14 +9,39 @@
 #include <utility>
 #include <vector>
 
+/////////// TRICKS (from Duckling and others) /////////////
+
 #if defined(__clang__) && __clang__ >= 13
-#define MUST_TAIL [[clang::musttail]]
+	#define MUST_TAIL [[clang::musttail]]
 #elif defined(__GNUG__) && __GNUG__ >= 15
-#define MUST_TAIL [[gnu::musttail]]
+	#define MUST_TAIL [[gnu::musttail]]
 #else
-#define MUST_TAIL
-#warning "Using tailcalls without a support from compiler"
+	#define MUST_TAIL
+	#warning "Using tailcalls without a support from compiler"
 #endif
+
+#if defined(__clang__) && __clang__ >= 15
+	#define INLINE [[clang::always_inline]]
+#elif defined(__GNUG__) && __GNUG__ >= 6
+	#define INLINE [[gnu::always_inline]]
+#else
+	#define INLINE
+	#warning "Using INLINE without a support from compiler"
+#endif
+
+namespace detail {
+	template<typename ActionT>
+	class DeferHelper final {
+		ActionT action;
+
+	public:
+		DeferHelper(ActionT&& action): action(std::move(action)) {}
+
+		~DeferHelper() noexcept { action(); }
+	};
+}
+
+#define defer(code) ::detail::DeferHelper _([&]() noexcept -> void { code; })
 
 //		here is thread
 // |----[_______)-----------|
@@ -46,14 +71,18 @@ class debug_thread {
 	memory, functions, and others data ...
 	*/
 
-	pos_t in_interval(const debug_thread &previous, count_t target) const {
-		count_t offset = previous.get_time();
+	pos_t in_interval(const debug_thread &prev, count_t target) const {
+		count_t offset = prev.get_time();
 		count_diff relative_count = (count - offset), relative_target = (target - offset);
 
 		if (relative_target < LAST_CHUNK) {
 			return pos_t::LACK_OF_SPACE;
 		}
-		
+
+		if (relative_count < 0) {
+			return pos_t::LEFT_BEHIND;
+		}
+
 		if (relative_count < relative_target * LOW_BOUND) {
 			return pos_t::BEFORE_LOW;
 		}
@@ -69,11 +98,12 @@ class debug_thread {
 	debug_thread(count_t time) : count(time) {}
 	count_t get_time() const { return count; }
 
-	void execute(/* maybe some arguments ... */) {
+	void execute(count_diff step = 1 /* maybe some arguments ... */) {
 		/**
 		... some other fancy actions
 		*/
-		count++;
+		assert(step >= 0);
+		count += step;
 	}
 };
 
@@ -89,48 +119,61 @@ class anachro_thread {
 
 	void remove_last() { subthreads.pop_back(); }
 
-	void assert_property() const {
-		assert(subthreads.size());
-		assert(subthreads[0].get_time() == 0);
-		for (auto it = subthreads.begin(); it + 1 != subthreads.end(); ++it) {
-			assert(it->get_time() < (it + 1)->get_time());
-			assert((it + 1)->in_interval(*it, get_time()) == pos_t::EXACTLY_IN);
-		}
-		if (subthreads.size() > 1) {
-			assert(last_thread().get_time() - subthreads[subthreads.size() - 2].get_time() < LAST_CHUNK);
+	INLINE void assert_always() const {
+		assert(subthreads.size() && subthreads[0].get_time() == 0);
+		for (size_t i = 0; i + 1 < subthreads.size(); ++i) {
+			assert(subthreads[i].get_time() < subthreads[i + 1].get_time());
 		}
 	}
 
-	void restore_property(count_t target, int idx = 0) {
-		if (subthreads.size() <= 1 || idx + 1 >= subthreads.size()) {
-			return;
+	INLINE void assert_ratio() const {
+		for (size_t i = 1; i + 1 < subthreads.size(); ++i) {
+			assert(subthreads[i].in_interval(subthreads[i - 1], get_time()) == pos_t::EXACTLY_IN);
 		}
+	}
 
-		debug_thread &self = subthreads[idx];
-		debug_thread &son = subthreads[idx + 1];
-		pos_t rel_pos = son.in_interval(self, target);
+	INLINE void assert_small_end() const {
+		assert(subthreads.size() <= 1 ||
+			   get_time() - subthreads[subthreads.size() - 2].get_time() < LAST_CHUNK);
+	}
 
-		switch (rel_pos) {
-		case pos_t::LACK_OF_SPACE:
-			while (subthreads.size() > idx + 1) {
-				subthreads.pop_back();
+	INLINE void assert_full_property() const {
+		assert_always();
+		assert_ratio();
+		assert_small_end();
+	}
+
+	void restore_ratio(count_t target, size_t idx = 0) {
+		assert_always();
+		idx++;
+
+		while (idx < subthreads.size()) {
+			debug_thread &prev = subthreads[idx - 1];
+			debug_thread &self = subthreads[idx];
+
+			pos_t rel_pos = self.in_interval(prev, target);
+
+			switch (rel_pos) {
+			case pos_t::LACK_OF_SPACE:
+				subthreads.erase(subthreads.begin() + idx, subthreads.end());
+				return;
+
+			case pos_t::LEFT_BEHIND:
+				self = prev;
+				continue;
+
+			case pos_t::AFTER_HIGH:
+				subthreads.insert(subthreads.begin() + idx, prev);
+				continue;
+
+			case pos_t::EXACTLY_IN:
+				idx++;
+				continue;
+
+			case pos_t::BEFORE_LOW:
+				self.execute();
+				continue;
 			}
-			return;
-
-		case pos_t::LEFT_BEHIND:
-			son = self;
-			MUST_TAIL return restore_property(target, idx);
-
-		case pos_t::AFTER_HIGH:
-			subthreads.insert(subthreads.begin() + idx + 1, self);
-			MUST_TAIL return restore_property(target, idx);
-
-		case pos_t::EXACTLY_IN:
-			MUST_TAIL return restore_property(target, idx + 1);
-
-		case pos_t::BEFORE_LOW:
-			son.execute();
-			MUST_TAIL return restore_property(target, idx);
 		}
 	}
 
@@ -138,7 +181,7 @@ class anachro_thread {
 	count_t get_time() const { return last_thread().get_time(); }
 
 	void execute_frwrd(count_diff step = 1) {
-		assert_property();
+		assert_full_property();
 
 		count_t target = get_time() + step;
 		debug_thread last{0};
@@ -147,12 +190,12 @@ class anachro_thread {
 			last = last_thread();
 			remove_last();
 		}
-		
-		restore_property(target);
+
+		restore_ratio(target);
 
 		while (target - get_time() >= LAST_CHUNK) {
 			debug_thread new_last{get_time()};
-			debug_thread& old_last = last_thread();
+			debug_thread &old_last = last_thread();
 
 			while (new_last.in_interval(old_last, target) == pos_t::BEFORE_LOW) {
 				new_last.execute();
@@ -171,7 +214,7 @@ class anachro_thread {
 	}
 
 	void execute_backwrd(count_diff step = 1) {
-		assert_property();
+		assert_full_property();
 
 		if (step >= get_time()) {
 			while (subthreads.size() != 1) {
@@ -187,7 +230,7 @@ class anachro_thread {
 		}
 
 		count_t curr_time = get_time();
-		restore_property(curr_time);
+		restore_ratio(curr_time);
 		execute_frwrd(target - curr_time);
 	}
 
@@ -204,6 +247,13 @@ int main() {
 
 	for (int i = 0; i < (1 << 20); i++) {
 		test.execute_frwrd();
+		std::cout << test.get_time() << ": ";
+		test.print_detail();
+		std::cout << "\n";
+	}
+
+	for (int i = 0; i < (1 << 5); i++) {
+		test.execute_frwrd((1 << 20));
 		std::cout << test.get_time() << ": ";
 		test.print_detail();
 		std::cout << "\n";
