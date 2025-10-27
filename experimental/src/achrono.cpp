@@ -18,17 +18,26 @@
 
 using count_t = uint64_t;
 using count_diff = int64_t;
-constexpr double LOW_RATIO = 0.5;
-constexpr double HIGH_RATIO = 0.75;
+constexpr double LOW_RATIO = 0.45;
+constexpr double HIGH_RATIO = 0.55;
+constexpr double BUILD_RATIO = 0.5;
 constexpr count_t LAST_CHUNK = 100;
 
-static_assert(0 < LOW_RATIO && LOW_RATIO < 1.0, "LOW_RATIO must be in (0, 1)");
-static_assert(0 < HIGH_RATIO && HIGH_RATIO < 1.0, "HIGH_RATIO must be in (0, 1)");
-static_assert(
-	LOW_RATIO < HIGH_RATIO && 
-	HIGH_RATIO <= LOW_RATIO + LOW_RATIO * (1.0 - LOW_RATIO), 
-	"There is a LOW_RATIO-depentant range in which HIGH_RATIO should be"
-);
+struct STATIC_ASSERTS {
+private:
+
+	static_assert(0 < LOW_RATIO, "LOW_RATIO must be greater than 0");
+	static_assert(LOW_RATIO < BUILD_RATIO, "BUILD_RATIO must be bigger than LOW_RATIO");
+	static_assert(BUILD_RATIO < HIGH_RATIO, "HIGH_RATIO must be bigger than BUILD_RATIO");
+	static_assert(HIGH_RATIO < 1, "HIGH_RATIO must be smaller than 1");
+
+	static constexpr double LOWEST_NEXT_BUILD = LOW_RATIO + (1 - LOW_RATIO) * LOW_RATIO;
+	static_assert(HIGH_RATIO <= LOWEST_NEXT_BUILD, "");
+	static constexpr double END_WHEN_PROMOTING = BUILD_RATIO / LOW_RATIO;
+
+	static_assert(LOWEST_NEXT_BUILD > BUILD_RATIO * END_WHEN_PROMOTING, "we can't have it ");
+};
+
 
 class debug_thread {
   private:
@@ -54,6 +63,13 @@ class anachro_thread {
   private:
 	std::vector<debug_thread> subthreads = {debug_thread{0}};
 
+	int total_steps = 0;
+
+	void promote(debug_thread& thread, count_diff steps) {
+		total_steps += steps;
+		thread.execute(steps);
+	}
+
 	enum class pos_t {
 		AFTER_HIGH,
 		BEFORE_LOW,
@@ -63,7 +79,7 @@ class anachro_thread {
 		UNNECESSARY,
 	};
 
-	pos_t in_interval(size_t prev, size_t self, count_t end) const {
+	INLINE pos_t in_interval(size_t prev, size_t self, count_t end) const {
 		assert(prev < subthreads.size() && self < subthreads.size());
 
 		count_t offset = subthreads[prev].get_time();
@@ -98,11 +114,11 @@ class anachro_thread {
 	}
 
 	count_diff to_interval(const debug_thread& prev, const debug_thread& self, count_t end) const {
-		assert(prev.get_time() <= self.get_time());
+		assert(prev.get_time() <= self.get_time() && self.get_time() < end);
 
 		count_t offset = prev.get_time();
 		count_diff relative_count = (self.get_time() - offset);
-		count_diff relative_target = (end - offset) * ((LOW_RATIO + HIGH_RATIO) / 2);
+		count_diff relative_target = (end - offset) * BUILD_RATIO;
 
 		return relative_target - relative_count;
 	}
@@ -170,7 +186,7 @@ class anachro_thread {
 				continue;
 
 			case pos_t::BEFORE_LOW:
-				subthreads[idx].execute(to_interval(idx - 1, idx, target_end));
+				promote(subthreads[idx], to_interval(idx - 1, idx, target_end));
 				continue;
 
 			case pos_t::EXACTLY_IN:
@@ -197,7 +213,7 @@ class anachro_thread {
 			debug_thread &old_last = last_thread();
 			debug_thread new_last{old_last};
 
-			new_last.execute(to_interval(old_last, new_last, target_end));
+			promote(new_last, to_interval(old_last, new_last, target_end));
 
 			add_thread(new_last);
 		}
@@ -210,7 +226,7 @@ class anachro_thread {
 		}
 		add_thread(last);
 
-		last_thread().execute(target_end - get_time());
+		promote(last_thread(), target_end - get_time());
 	}
 
 	void restore_property(count_t target_end) {
@@ -260,25 +276,32 @@ class anachro_thread {
 			std::cout << subthreads[i].get_time() << " ";
 		}
 		std::cout << "\n";
+		std::cout << "[total]: " << total_steps << "\n";
 	}
 };
 
 int main() {
 	anachro_thread test{};
 
-	size_t jmps;
-	std::cin >> jmps;
+	// size_t jmps;
+	// std::cin >> jmps;
 	
-	for (int i = 0; i < jmps; i++) {
-		static int64_t jmp;
-		std::cin >> jmp;
+	// for (int i = 0; i < jmps; i++) {
+	// 	static int64_t jmp;
+	// 	std::cin >> jmp;
 
-		if (jmp < 0) {
-			test.execute_backwrd(-jmp);
-		} else {
-			test.execute_frwrd(jmp);
-		}
+	// 	if (jmp < 0) {
+	// 		test.execute_backwrd(-jmp);
+	// 	} else {
+	// 		test.execute_frwrd(jmp);
+	// 	}
 
+	// 	test.print_detail();
+	// }
+
+	for (int i = 0; i < 100000; i++) {
+		int el;
+		test.execute_frwrd();
 		test.print_detail();
 	}
 }
