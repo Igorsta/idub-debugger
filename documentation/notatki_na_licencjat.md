@@ -1,9 +1,35 @@
 1. Rzeczy, które musimy zrobić:
-	- zrobić strukturę trzymającą breakpointy, zmiany w kodzie stworzone w trakcie debugowania oraz dane profilera i nawijania historii wykonania
-	- ustalić jak będziemy wykonywać opcody (czy robimy oddzielny zestaw instrukcji, czy bazujemy na "zwykłym" bytecodzie)
-	- zrobić mapowanie między instrukcjami bytecodu, a zawartością pliku (coś à la CompilerExplorer) <- TO MOŻE WYKRACZAĆ POZA VM-kę
+	- __zrobić strukturę dla metadanych programowania__
+		- __breakpointy__
+		- zmiany w kodzie stworzone w trakcie debugowania 
+		- dane profilera 
+			- __ilość wykonania danej instrukcji__
+			- ilość wywołania danej funkcji
+			- ilość wykonanych skoków
+			- cokolwiek co innego zechce ZPP od JIT-a
+			- __mierzenie czasu wykonania__
+		- nawijana historia wykonania
+	- ustalić jak będziemy wykonywać opcody 
+		- czy potrzubujemy oddzielny zestaw instrukcji do debugowania
+	- __zrobić mapowanie między instrukcjami bytecodu, a zawartością pliku__
+		- coś à la CompilerExplorer
+		- 
+		- DLA PLIKÓW  TO ZNACZĄCO WYKRACZA POZA VM-kę
 	- zrobić zestaw komend do CLI, żeby było po Bożemu
+		- __standardowe nazewnictwo__
+			- next(n)
+			- step(s)
+			- nexti(ni)
+			- start
+			- run(r)
+			- finish(fin)
+			- backtrace(bt)
+			- break(b)
+			- info
 	- zrobić jakiś UI + dobrze żeby debugger też miał jakieś konkretne API, które mogą inni wykorzystywać (naprzykład LSP)
+		- +Tab podpowiadał symbole
+		- +Enter wykonuje ostatnie polecenie
+		- "define" pozwala na wprowadzanie własnych instrukcji i łączyć podstawowe instrukcje jak np. "next, print var, "
 
 2. Istniejące rzeczy w projekcie, które mogą się przydać:
 	- cały REPL: dev/src/vm/src/vm/vm_repl.cpp
@@ -24,6 +50,8 @@
 		- Compiler: dev/src/vm/src/vm/loader/compiler/compiler.hpp:23
 	mapowanie między instrukcjami a pozycjami w pliku:
 		- SourcePosition: dev/src/common/diagnostic/src/diagnostic/source_position.hpp:53
+	profiler time measurement:
+		- PrintAs: dev/src/common/timer/src/timer/timer.cpp:38
 
 2.5. Notatki ze staży (ni w ząb nie wiem co miałem na myśli je pisząc):
 	thread_stack.hpp:ThreadStack 

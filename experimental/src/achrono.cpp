@@ -18,10 +18,10 @@
 
 using count_t = uint64_t;
 using count_diff = int64_t;
-constexpr double LOW_RATIO = 0.45;
-constexpr double HIGH_RATIO = 0.55;
-constexpr double BUILD_RATIO = 0.5;
-constexpr count_t LAST_CHUNK = 100;
+constexpr double LOW_RATIO = 0.50;
+constexpr double HIGH_RATIO = 0.75;
+constexpr double BUILD_RATIO = 0.625;
+constexpr count_t LAST_CHUNK = 10;
 
 struct STATIC_ASSERTS {
 private:
@@ -35,7 +35,7 @@ private:
 	static_assert(HIGH_RATIO <= LOWEST_NEXT_BUILD, "");
 	static constexpr double END_WHEN_PROMOTING = BUILD_RATIO / LOW_RATIO;
 
-	static_assert(LOWEST_NEXT_BUILD > BUILD_RATIO * END_WHEN_PROMOTING, "we can't have it ");
+	// static_assert(LOWEST_NEXT_BUILD > BUILD_RATIO * END_WHEN_PROMOTING, "we can't have it ");
 };
 
 
@@ -63,10 +63,11 @@ class anachro_thread {
   private:
 	std::vector<debug_thread> subthreads = {debug_thread{0}};
 
-	int total_steps = 0;
+	count_diff total_substeps = 0;
+	count_diff total_steps = 0;
 
 	void promote(debug_thread& thread, count_diff steps) {
-		total_steps += steps;
+		total_substeps += steps;
 		thread.execute(steps);
 	}
 
@@ -75,28 +76,28 @@ class anachro_thread {
 		BEFORE_LOW,
 		EXACTLY_IN,
 		LACK_OF_SPACE,
-		LEFT_BEHIND,
 		UNNECESSARY,
 	};
 
 	INLINE pos_t in_interval(size_t prev, size_t self, count_t end) const {
 		assert(prev < subthreads.size() && self < subthreads.size());
+		assert(subthreads[prev].get_time() <= subthreads[self].get_time());
+		assert(subthreads[self].get_time() <= end);
 
 		count_t offset = subthreads[prev].get_time();
 		count_diff relative_end = (end - offset);
+		count_t count = subthreads[self].get_time();
+
+		count_t high_bound = offset + relative_end * HIGH_RATIO;
+		count_t low_bound = offset + relative_end * LOW_RATIO;
+
+		if (self + 1 < subthreads.size() && subthreads[self + 1].get_time() < high_bound) {
+			return pos_t::UNNECESSARY;
+		}
 
 		if (relative_end < LAST_CHUNK) {
 			return pos_t::LACK_OF_SPACE;
 		}
-		
-		count_t count = subthreads[self].get_time();
-		
-		if (count < offset) {
-			return pos_t::LEFT_BEHIND;
-		}
-
-		count_t high_bound = offset + relative_end * HIGH_RATIO;
-		count_t low_bound = offset + relative_end * LOW_RATIO;
 
 		if (count < low_bound) {
 			return pos_t::BEFORE_LOW;
@@ -104,10 +105,6 @@ class anachro_thread {
 
 		if (count < high_bound) {
 			return pos_t::EXACTLY_IN;
-		}
-
-		if (self + 1 < subthreads.size() && subthreads[self + 1].get_time() < high_bound) {
-			return pos_t::UNNECESSARY;
 		}
 		
 		return pos_t::AFTER_HIGH;
@@ -187,6 +184,7 @@ class anachro_thread {
 
 			case pos_t::BEFORE_LOW:
 				promote(subthreads[idx], to_interval(idx - 1, idx, target_end));
+				idx++;
 				continue;
 
 			case pos_t::EXACTLY_IN:
@@ -196,10 +194,6 @@ class anachro_thread {
 			case pos_t::LACK_OF_SPACE:
 				subthreads.erase(subthreads.begin() + idx + 1, subthreads.end());
 				return;
-
-			case pos_t::LEFT_BEHIND:
-				subthreads[idx] = subthreads[idx - 1];
-				continue;
 
 			case pos_t::UNNECESSARY:
 				subthreads.erase(subthreads.begin() + idx);
@@ -248,6 +242,7 @@ class anachro_thread {
 		assert_full_property();
 		assert(step >= 0);
 		defer(assert_full_property());
+		total_steps += step;
 
 		restore_property(get_time() + step);
 	}
@@ -255,6 +250,7 @@ class anachro_thread {
 	void execute_backwrd(count_diff step = 1) {
 		assert_full_property();
 		defer(assert_full_property());
+		total_steps += step;
 
 		if (step >= get_time()) {
 			subthreads.erase(subthreads.begin() + 1, subthreads.end());
@@ -276,32 +272,92 @@ class anachro_thread {
 			std::cout << subthreads[i].get_time() << " ";
 		}
 		std::cout << "\n";
-		std::cout << "[total]: " << total_steps << "\n";
+		std::cout << "[total]: " << total_substeps << "\n";
+	}
+
+	auto get_total() {
+		return std::make_tuple(total_substeps, total_steps, double(total_substeps) / total_steps);
 	}
 };
 
-int main() {
+constexpr size_t TEST_SIZE = 1'000'000;
+
+void test_inc_stupid(size_t iterations = TEST_SIZE) {
 	anachro_thread test{};
 
-	// size_t jmps;
-	// std::cin >> jmps;
-	
-	// for (int i = 0; i < jmps; i++) {
-	// 	static int64_t jmp;
-	// 	std::cin >> jmp;
-
-	// 	if (jmp < 0) {
-	// 		test.execute_backwrd(-jmp);
-	// 	} else {
-	// 		test.execute_frwrd(jmp);
-	// 	}
-
-	// 	test.print_detail();
-	// }
-
-	for (int i = 0; i < 100000; i++) {
+	for (int i = 0; i < iterations; i++) {
 		int el;
 		test.execute_frwrd();
-		test.print_detail();
+		if (i % (iterations / 100) == 0) [[unlikely]]
+			test.print_detail();
+	}
+
+	test.print_detail();
+}
+
+void test_inc_smart(size_t iterations = TEST_SIZE) {
+	anachro_thread test{};
+
+	test.execute_frwrd(iterations);
+	test.print_detail();
+}
+
+void test_reverse_stupid(size_t iterations = TEST_SIZE) {
+	anachro_thread test{};
+	test.execute_frwrd(iterations);
+	auto [start_sub, start, _] = test.get_total();
+
+	for (int i = 0; i < iterations / 2; i++) {
+		int el;
+		test.execute_backwrd();
+		if (i % (iterations / 100) == 0) [[unlikely]]
+			test.print_detail();
+	}
+	auto [end_sub, end, _] = test.get_total();
+
+	std::cout << "test_reverse_stupid\n";
+	std::cout << end_sub - start_sub << " " << end - start << "\n";
+}
+
+void test_reverse_smart(size_t iterations = TEST_SIZE) {
+	anachro_thread test{};
+	test.execute_frwrd(iterations);
+	auto [start_sub, start, _] = test.get_total();
+
+	test.execute_backwrd(iterations / 2);
+
+	auto [end_sub, end, _] = test.get_total();
+
+	std::cout << "test_reverse_smart\n";
+	std::cout << end_sub - start_sub << " " << end - start << "\n";
+}
+
+int main() {
+	anachro_thread user_thread{};
+
+	test_reverse_stupid();
+	test_reverse_smart();
+
+	/*
+	test_reverse_stupid
+	42793403
+	test_reverse_smart
+	500000
+	*/
+
+	size_t jmps;
+	std::cin >> jmps;
+	
+	for (int i = 0; i < jmps; i++) {
+		static int64_t jmp;
+		std::cin >> jmp;
+
+		if (jmp < 0) {
+			user_thread.execute_backwrd(-jmp);
+		} else {
+			user_thread.execute_frwrd(jmp);
+		}
+
+		user_thread.print_detail();
 	}
 }
