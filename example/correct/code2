@@ -1,0 +1,16 @@
+fun main(0): {
+	label START
+	init
+	input_reg $0
+	output_reg $0
+	input_reg $1
+	output_reg $1
+	input_reg $2
+	output_reg $2
+
+	label LAST
+	input_reg $3
+	output_reg $3
+	reg_to_retval $3
+	exit_prog
+}

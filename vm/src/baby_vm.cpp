@@ -31,9 +31,10 @@ enum class operand_t;
 
 #define EXEC_START(instr, mem_space, frame, program) EXEC(instr, mem_space, frame, program)
 
-#define _N_EXEC_RAW exec::raw
-#define _N_EXEC_FULL exec::full
-#define _N_EXEC_UTILS exec::utils
+#define _N_EXEC exec
+#define _N_EXEC_RAW _N_EXEC::raw
+#define _N_EXEC_FULL _N_EXEC::full
+#define _N_EXEC_UTILS _N_EXEC::utils
 
 namespace _N_EXEC_FULL {
 #define OPCODE_ARGS                                                                                \
@@ -53,20 +54,26 @@ using RawFun = void(REF_OPCODE_ARGS);
 
 }; // namespace _N_EXEC_RAW
 
-#define _N_PARSE_OPCODES parse::opcode
+#define _N_PARSE parse
+#define _N_PARSE_OTHER _N_PARSE::other
+#define _N_PARSE_SIMPLE _N_PARSE::simple
+#define _N_PARSE_UTILS _N_PARSE::utils
 
-namespace _N_PARSE_OPCODES {
+namespace _N_PARSE {
 #define PARSE_OPCODE_ARGS                                                                          \
 	[[maybe_unused]] thread_builder_t &builder, [[maybe_unused]] const std::smatch &matches
 
 using parse_instr_t = void(PARSE_OPCODE_ARGS);
-}; // namespace _N_PARSE_OPCODES
+}; // namespace _N_PARSE
 
 using bit64 = uint64_t;
 using code_block = std::vector<instrutction_t>;
 
 using func_id_t = bit64;
-using label_id = bit64;
+using labl_id_t = bit64;
+
+using labl_id_map = std::unordered_map<std::string, labl_id_t>;
+using labl_map = std::unordered_map<func_id_t, size_t>;
 
 using func_id_map = std::unordered_map<std::string, func_id_t>;
 using func_map = std::unordered_map<func_id_t, function_t>;
@@ -82,8 +89,6 @@ struct frame_t {
 struct function_t {
 	code_block body;
 	uint64_t no_of_args;
-	uint64_t registers_begin, registers_end;
-	// std::unordered_map<label_id, code_pos> labels;
 };
 
 struct memory_space {
@@ -117,8 +122,7 @@ struct thread_t {
 	func_id_map func_id;
 	memory_space memory;
 
-	void start_execution()
-	{
+	void start_execution() {
 		int main_id = func_id.at("main");
 		const instrutction_t *instr = functions.at(main_id).body.data();
 		auto frame = memory.CALL_STACK.get();
@@ -136,14 +140,55 @@ public:
 	func_map functions_impl;
 	func_id_map func_decl;
 
-	func_id_t built_func;
+	labl_id_map labl_decl;
+	labl_map label_pos;
 
-	void add_instr(instrutction_t &instr) { functions_impl[built_func].body.push_back(instr); }
+	std::vector<size_t> jump_ops{};
+
+	func_id_t built_func;
+	bool is_building = false;
+
+	void add_instr(instrutction_t &instr) {
+		assert(is_building);
+		functions_impl[built_func].body.push_back(instr);
+	}
+
+	void add_jump(instrutction_t &instr) {
+		assert(is_building);
+		jump_ops.push_back(functions_impl[built_func].body.size());
+		functions_impl[built_func].body.push_back(instr);
+	}
+
 	void define_func(std::string name, uint64_t no_of_args) {
+		assert(is_building == false);
+		is_building = true;
 		built_func = refer_func(name);
 		functions_impl[built_func];
 		functions_impl[built_func].no_of_args = no_of_args;
 	}
+
+	void define_labl(std::string name) {
+		assert(is_building);
+		label_pos[refer_label(name)] = functions_impl[built_func].body.size();
+	}
+
+	void commit_func() {
+		if (is_building == false) {
+			return;
+		}
+
+		for (const auto &[name, id] : labl_decl) {
+			assert(label_pos.find(id) != label_pos.end());
+		}
+		while (jump_ops.size()) {
+			int curr_pos = jump_ops.back();
+			jump_ops.pop_back();
+			instrutction_t &jmp_instr = functions_impl[built_func].body[curr_pos];
+			labl_id_t label_id = jmp_instr.arg[0];
+			jmp_instr.arg[0] = label_pos[label_id] - curr_pos;
+		}
+		is_building = false;
+	};
 
 	thread_t make_thread() {
 		return {
@@ -153,11 +198,17 @@ public:
 		};
 	}
 
-	func_id_t refer_func(std::string input) {
+	func_id_t refer_func(const std::string &input) {
+		assert(is_building);
 		return func_decl.emplace(input, func_decl.size()).first->second;
 	}
 
-	void validate() {
+	labl_id_t refer_label(const std::string &input) {
+		assert(is_building);
+		return labl_decl.emplace(input, labl_decl.size()).first->second;
+	}
+
+	void validate_prog() {
 		for (auto &[_, id] : func_decl) {
 			assert(functions_impl.find(id) != functions_impl.end());
 		}
@@ -176,38 +227,48 @@ public:
 #define FUNC_RET func_return
 #define EXIT_PROG exit_prog
 #define CALL call_func
+#define LABEL label
+#define JUMP jump_to
+
+#define _N_ARGS args
+#define _N_ARGS_UTILS _N_ARGS::utils
 
 #define STRINGIFY(x) #x
 #define nameof(x) STRINGIFY(x)
 
-#define IMPL_REQUIRED_FOR_OPCODES(macro)                                                           \
+#define REQUIRED_FOR_SIMPLE(macro)                                                                 \
 	namespace _N_EXEC_RAW {                                                                        \
 	INLINE RawFun macro;                                                                           \
 	}                                                                                              \
 	namespace _N_EXEC_FULL {                                                                       \
 	Fun macro;                                                                                     \
 	}                                                                                              \
-	namespace instructions::arguments {                                                            \
+	namespace _N_ARGS {                                                                            \
 	const std::vector<operand_t> &macro();                                                         \
 	}                                                                                              \
-	namespace _N_PARSE_OPCODES {                                                                   \
+	namespace _N_PARSE_SIMPLE {                                                                    \
 	parse_instr_t macro;                                                                           \
 	}                                                                                              \
 	namespace _N_EXEC_UTILS::next_instr_offset {                                                   \
 	constexpr size_t macro();                                                                      \
 	}
 
-IMPL_REQUIRED_FOR_OPCODES(STCK_INIT)
-IMPL_REQUIRED_FOR_OPCODES(STCK_DEINIT)
-IMPL_REQUIRED_FOR_OPCODES(REG_TO_STCK)
-IMPL_REQUIRED_FOR_OPCODES(STCK_TO_REG)
-IMPL_REQUIRED_FOR_OPCODES(REG_TO_RVAL)
-IMPL_REQUIRED_FOR_OPCODES(REG_TO_REG)
-IMPL_REQUIRED_FOR_OPCODES(INPUT_TO_REG)
-IMPL_REQUIRED_FOR_OPCODES(OUTPUT_REG)
-IMPL_REQUIRED_FOR_OPCODES(FUNC_RET)
-IMPL_REQUIRED_FOR_OPCODES(EXIT_PROG)
-IMPL_REQUIRED_FOR_OPCODES(CALL)
+namespace _N_PARSE_OTHER {
+parse_instr_t LABEL;
+}
+
+REQUIRED_FOR_SIMPLE(STCK_INIT)
+REQUIRED_FOR_SIMPLE(STCK_DEINIT)
+REQUIRED_FOR_SIMPLE(REG_TO_STCK)
+REQUIRED_FOR_SIMPLE(STCK_TO_REG)
+REQUIRED_FOR_SIMPLE(REG_TO_RVAL)
+REQUIRED_FOR_SIMPLE(REG_TO_REG)
+REQUIRED_FOR_SIMPLE(INPUT_TO_REG)
+REQUIRED_FOR_SIMPLE(OUTPUT_REG)
+REQUIRED_FOR_SIMPLE(FUNC_RET)
+REQUIRED_FOR_SIMPLE(EXIT_PROG)
+REQUIRED_FOR_SIMPLE(CALL)
+REQUIRED_FOR_SIMPLE(JUMP)
 
 ///////////////////// INSTRUCTION_DEFINITION ////////////////////////////
 
@@ -234,6 +295,7 @@ enum class operand_t {
 	DECIMAL_NUM,
 	REGISTER_ID,
 	FUNC_NAME,
+	LABEL_ID,
 };
 
 constexpr std::string regex_arg_t(const operand_t &arg) {
@@ -243,6 +305,8 @@ constexpr std::string regex_arg_t(const operand_t &arg) {
 	case operand_t::REGISTER_ID:
 		return "\\$(\\d+)";
 	case operand_t::FUNC_NAME:
+		return "([A-Za-z0-9_]+)";
+	case operand_t::LABEL_ID:
 		return "([A-Za-z0-9_]+)";
 	default:
 		assert(false);
@@ -254,7 +318,7 @@ constexpr std::string regex_func() {
 		   regex_arg_t(operand_t::DECIMAL_NUM) + "\\s*\\)\\s*:" + "\\s*\\{([^}]*)\\}";
 }
 
-namespace parse::utils {
+namespace _N_PARSE_UTILS {
 constexpr bit64 parse_arg_t(thread_builder_t &builder, operand_t type, std::string input) {
 	switch (type) {
 	case operand_t::DECIMAL_NUM:
@@ -263,14 +327,16 @@ constexpr bit64 parse_arg_t(thread_builder_t &builder, operand_t type, std::stri
 		return std::stoull(input);
 	case operand_t::FUNC_NAME:
 		return builder.refer_func(input);
+	case operand_t::LABEL_ID:
+		return builder.refer_label(input);
 	default:
 		assert(false);
 	}
 };
-} // namespace parse::utils
+} // namespace _N_PARSE_UTILS
 
 #define ENLIST_OPERANDS(macro, ...)                                                                \
-	const std::vector<operand_t> &instructions::arguments::macro() {                               \
+	const std::vector<operand_t> &_N_ARGS::macro() {                                               \
 		static const std::vector<operand_t> inner = {__VA_ARGS__};                                 \
 		return inner;                                                                              \
 	}
@@ -286,8 +352,14 @@ ENLIST_OPERANDS(OUTPUT_REG, operand_t::REGISTER_ID)
 ENLIST_OPERANDS(FUNC_RET)
 ENLIST_OPERANDS(EXIT_PROG)
 ENLIST_OPERANDS(CALL, operand_t::FUNC_NAME)
+ENLIST_OPERANDS(JUMP, operand_t::LABEL_ID)
 
-namespace instructions::arguments::utils {
+namespace _N_ARGS {
+const std::vector<operand_t> &LABEL();
+}
+ENLIST_OPERANDS(LABEL, operand_t::LABEL_ID)
+
+namespace _N_ARGS_UTILS {
 std::unordered_map<std::string, const std::vector<operand_t> &> str_to_arg = {
 	{nameof(STCK_INIT), STCK_INIT()},
 	{nameof(STCK_DEINIT), STCK_DEINIT()},
@@ -300,46 +372,62 @@ std::unordered_map<std::string, const std::vector<operand_t> &> str_to_arg = {
 	{nameof(FUNC_RET), FUNC_RET()},
 	{nameof(EXIT_PROG), EXIT_PROG()},
 	{nameof(CALL), CALL()},
+	{nameof(LABEL), LABEL()},
+	{nameof(JUMP), JUMP()},
 };
 
-}; // namespace instructions::arguments
+}; // namespace _N_ARGS_UTILS
 
 //////////////////////////// PARSE SIMPLE OPCODE IMPL ////////////////////////////
 
-#define PARSE_OPCODE_IMPL(macro)                                                                   \
-	void _N_PARSE_OPCODES::macro(PARSE_OPCODE_ARGS) {                                              \
+#define PARSE_SIMPLE_IMPL(macro)                                                                   \
+	void _N_PARSE_SIMPLE::macro(PARSE_OPCODE_ARGS) {                                               \
 		instrutction_t instr;                                                                      \
 		instr.action = &::_N_EXEC_FULL::macro;                                                     \
 		for (size_t i = 0; i < args_per_instr; i++) {                                              \
 			instr.arg[i] = 0;                                                                      \
 		}                                                                                          \
                                                                                                    \
-		const auto &args = ::instructions::arguments::macro();                                     \
+		const auto &args = ::_N_ARGS::macro();                                                     \
 		for (int i = 0; i < args.size(); i++) {                                                    \
-			instr.arg[i] = parse::utils::parse_arg_t(builder, args[i], matches[i + 1]);            \
+			instr.arg[i] = _N_PARSE_UTILS::parse_arg_t(builder, args[i], matches[i + 1]);          \
 		}                                                                                          \
 		builder.add_instr(instr);                                                                  \
 	}
 
-PARSE_OPCODE_IMPL(STCK_INIT)
-PARSE_OPCODE_IMPL(STCK_DEINIT)
-PARSE_OPCODE_IMPL(REG_TO_STCK)
-PARSE_OPCODE_IMPL(STCK_TO_REG)
-PARSE_OPCODE_IMPL(REG_TO_RVAL)
-PARSE_OPCODE_IMPL(REG_TO_REG)
-PARSE_OPCODE_IMPL(INPUT_TO_REG)
-PARSE_OPCODE_IMPL(OUTPUT_REG)
-PARSE_OPCODE_IMPL(FUNC_RET)
-PARSE_OPCODE_IMPL(EXIT_PROG)
-PARSE_OPCODE_IMPL(CALL)
+PARSE_SIMPLE_IMPL(STCK_INIT)
+PARSE_SIMPLE_IMPL(STCK_DEINIT)
+PARSE_SIMPLE_IMPL(REG_TO_STCK)
+PARSE_SIMPLE_IMPL(STCK_TO_REG)
+PARSE_SIMPLE_IMPL(REG_TO_RVAL)
+PARSE_SIMPLE_IMPL(REG_TO_REG)
+PARSE_SIMPLE_IMPL(INPUT_TO_REG)
+PARSE_SIMPLE_IMPL(OUTPUT_REG)
+PARSE_SIMPLE_IMPL(FUNC_RET)
+PARSE_SIMPLE_IMPL(EXIT_PROG)
+PARSE_SIMPLE_IMPL(CALL)
 
-namespace parse::utils {
+void _N_PARSE_SIMPLE::JUMP(PARSE_OPCODE_ARGS) {
+	instrutction_t instr;
+	instr.action = &::_N_EXEC_FULL::JUMP;
+	for (size_t i = 0; i < args_per_instr; i++) {
+		instr.arg[i] = 0;
+	}
+
+	instr.arg[0] = _N_PARSE_UTILS::parse_arg_t(builder, operand_t::LABEL_ID, matches[1]);
+
+	builder.add_jump(instr);
+}
+
+void _N_PARSE_OTHER::LABEL(PARSE_OPCODE_ARGS) { builder.define_labl(matches[1]); }
+
+namespace _N_PARSE_UTILS {
 void nop(PARSE_OPCODE_ARGS) { return; }
 
 std::regex make_opcode_pattern(std::string op_name) {
 	std::string ans = "\\s*" + op_name;
 
-	using instructions::arguments::utils::str_to_arg;
+	using _N_ARGS_UTILS::str_to_arg;
 
 	auto it = str_to_arg.find(op_name);
 	assert(it != str_to_arg.end());
@@ -358,9 +446,9 @@ std::regex make_opcode_pattern(std::string op_name) {
 
 void parse_line(const std::string &line, thread_builder_t &builder) {
 
-	using namespace ::_N_PARSE_OPCODES;
-	using parse::utils::make_opcode_pattern;
-	using parse::utils::nop;
+	using namespace ::_N_PARSE_SIMPLE;
+	using _N_PARSE_UTILS::make_opcode_pattern;
+	using _N_PARSE_UTILS::nop;
 
 	static const std::unordered_map<std::string, std::pair<std::regex, parse_instr_t *>>
 		str_to_instr = {
@@ -376,6 +464,8 @@ void parse_line(const std::string &line, thread_builder_t &builder) {
 			{nameof(FUNC_RET), {make_opcode_pattern(nameof(FUNC_RET)), &FUNC_RET}},
 			{nameof(EXIT_PROG), {make_opcode_pattern(nameof(EXIT_PROG)), &EXIT_PROG}},
 			{nameof(CALL), {make_opcode_pattern(nameof(CALL)), &CALL}},
+			{nameof(LABEL), {make_opcode_pattern(nameof(LABEL)), &::_N_PARSE_OTHER::LABEL}},
+			{nameof(JUMP), {make_opcode_pattern(nameof(JUMP)), &JUMP}},
 			{"#", {std::regex("\\s*(?:#.*)?"), nop}},
 		};
 
@@ -421,14 +511,15 @@ thread_t file_parse(std::string &content) {
 		while (getline(code, line)) {
 			parse_line(line, res);
 		}
+		res.commit_func();
 	}
 
-	res.validate();
+	res.validate_prog();
 
 	return res.make_thread();
 }
 
-} // namespace parse::utils
+} // namespace _N_PARSE_UTILS
 
 std::string read_file(std::string file_name) {
 	std::ifstream file(std::filesystem::absolute(file_name));
@@ -443,7 +534,6 @@ std::string read_file(std::string file_name) {
 
 	return content;
 }
-
 
 //////////////////////////// OPCODE RAW ACTION IMPL ////////////////////////////
 
@@ -547,6 +637,8 @@ void _N_EXEC_RAW::EXIT_PROG(REF_OPCODE_ARGS) {
 	std::cout << std::format("program exited with {}\n", *mem_space->MEM_STACK.get());
 }
 
+void _N_EXEC_RAW::JUMP(REF_OPCODE_ARGS) { instr += instr->arg[0]; }
+
 //////////////////////////// OPCODE OFFSET IMPL ////////////////////////////
 
 #define INSTR_OFFSET_IMPL(macro, offset)                                                           \
@@ -564,10 +656,11 @@ INSTR_OFFSET_IMPL(INPUT_TO_REG, 1)
 INSTR_OFFSET_IMPL(OUTPUT_REG, 1)
 INSTR_OFFSET_IMPL(FUNC_RET, 0)
 INSTR_OFFSET_IMPL(CALL, 0)
+INSTR_OFFSET_IMPL(JUMP, 0)
 
 //////////////////////////// OPCODE FULL EXEC IMPL ////////////////////////////
 
-#define EXEC_FULL_IMPL(macro)                                                                   \
+#define EXEC_FULL_IMPL(macro)                                                                      \
 	void _N_EXEC_FULL::macro(OPCODE_ARGS) {                                                        \
 		_N_EXEC_RAW::macro(FRWARD_ARGS);                                                           \
                                                                                                    \
@@ -584,6 +677,7 @@ EXEC_FULL_IMPL(INPUT_TO_REG)
 EXEC_FULL_IMPL(OUTPUT_REG)
 EXEC_FULL_IMPL(FUNC_RET)
 EXEC_FULL_IMPL(CALL)
+EXEC_FULL_IMPL(JUMP)
 
 void _N_EXEC_FULL::EXIT_PROG(OPCODE_ARGS) {
 	_N_EXEC_RAW::EXIT_PROG(FRWARD_ARGS);
@@ -601,7 +695,7 @@ int main(int argc, const char *argv[]) {
 	std::string file = argv[1];
 	std::string file_content = read_file(file);
 
-	thread_t program = parse::utils::file_parse(file_content);
+	thread_t program = _N_PARSE_UTILS::file_parse(file_content);
 
 	program.start_execution();
 
