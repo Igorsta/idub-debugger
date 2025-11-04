@@ -567,23 +567,23 @@ INSTR_OFFSET_IMPL(CALL, 0)
 
 //////////////////////////// OPCODE FULL EXEC IMPL ////////////////////////////
 
-#define _N_EXEC_FULL_IMPL(macro)                                                                   \
+#define EXEC_FULL_IMPL(macro)                                                                   \
 	void _N_EXEC_FULL::macro(OPCODE_ARGS) {                                                        \
 		_N_EXEC_RAW::macro(FRWARD_ARGS);                                                           \
                                                                                                    \
 		EXEC_NEXT(_N_EXEC_UTILS::next_instr_offset::macro());                                      \
 	}
 
-_N_EXEC_FULL_IMPL(STCK_INIT)
-_N_EXEC_FULL_IMPL(STCK_DEINIT)
-_N_EXEC_FULL_IMPL(REG_TO_STCK)
-_N_EXEC_FULL_IMPL(STCK_TO_REG)
-_N_EXEC_FULL_IMPL(REG_TO_RVAL)
-_N_EXEC_FULL_IMPL(REG_TO_REG)
-_N_EXEC_FULL_IMPL(INPUT_TO_REG)
-_N_EXEC_FULL_IMPL(OUTPUT_REG)
-_N_EXEC_FULL_IMPL(FUNC_RET)
-_N_EXEC_FULL_IMPL(CALL)
+EXEC_FULL_IMPL(STCK_INIT)
+EXEC_FULL_IMPL(STCK_DEINIT)
+EXEC_FULL_IMPL(REG_TO_STCK)
+EXEC_FULL_IMPL(STCK_TO_REG)
+EXEC_FULL_IMPL(REG_TO_RVAL)
+EXEC_FULL_IMPL(REG_TO_REG)
+EXEC_FULL_IMPL(INPUT_TO_REG)
+EXEC_FULL_IMPL(OUTPUT_REG)
+EXEC_FULL_IMPL(FUNC_RET)
+EXEC_FULL_IMPL(CALL)
 
 void _N_EXEC_FULL::EXIT_PROG(OPCODE_ARGS) {
 	_N_EXEC_RAW::EXIT_PROG(FRWARD_ARGS);
