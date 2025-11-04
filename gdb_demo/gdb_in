@@ -1,0 +1,46 @@
+# ---- Safe GDB startup settings ----
+set confirm off
+set pagination off
+set complaints 0
+set breakpoint pending on
+set unwindonsignal on
+set verbose off
+
+# ---- Start program ----
+start ThisIsMainArg
+
+# ---- Print variables safely ----
+python
+for cmd in [
+    "s",
+    "n",
+    "p global_var",
+    "p func_local_var",
+    "info locals",
+    "p $2",
+    "bt",
+    "p argv[1]",
+    "frame 1",
+	"p argv[1]",
+    "frame 0",
+    "fin",
+    "frame",
+    "list",
+    "whatis ret",
+    "whatis add<int>",
+    "set variable ret = 7",
+    "p ret",
+    "p ret = 42",
+    "b 9",
+    "b xorAdd<int>(int, int)",
+    "info breakpoints",
+    "c",
+	"c",
+	"q",
+]:
+    print(f"(gdb) {cmd}")
+    try:
+        gdb.execute(cmd)
+    except gdb.error as e:
+        print(f"{e}")
+end

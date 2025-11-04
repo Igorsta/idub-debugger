@@ -1,0 +1,82 @@
+Reading symbols from ./build/bin/gdb_demo...
+Temporary breakpoint 1 at 0x4011bc: file /home/duckduck/DUCKLING/IDUB/gdb_demo/gdb_demo.cpp, line 27.
+
+This GDB supports auto-downloading debuginfo from the following URLs:
+  <https://debuginfod.ubuntu.com>
+Debuginfod has been disabled.
+To make this setting permanent, add 'set debuginfod enabled off' to .gdbinit.
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
+
+Temporary breakpoint 1, main (argc=2, argv=0x7fffffffda38) at /home/duckduck/DUCKLING/IDUB/gdb_demo/gdb_demo.cpp:27
+27		int ret = func();
+(gdb) s
+func () at /home/duckduck/DUCKLING/IDUB/gdb_demo/gdb_demo.cpp:19
+19		int func_local_var = boring_func();
+(gdb) n
+20		if (el != 0) {
+(gdb) p global_var
+$1 = 512
+(gdb) p func_local_var
+$2 = 1042
+(gdb) info locals
+el = 4
+func_local_var = 1042
+(gdb) p $2
+$3 = 1042
+(gdb) bt
+#0  func () at /home/duckduck/DUCKLING/IDUB/gdb_demo/gdb_demo.cpp:20
+#1  0x00000000004011c1 in main (argc=2, argv=0x7fffffffda38) at /home/duckduck/DUCKLING/IDUB/gdb_demo/gdb_demo.cpp:27
+(gdb) p argv[1]
+No symbol "argv" in current context.
+(gdb) frame 1
+#1  0x00000000004011c1 in main (argc=2, argv=0x7fffffffda38) at /home/duckduck/DUCKLING/IDUB/gdb_demo/gdb_demo.cpp:27
+27		int ret = func();
+(gdb) p argv[1]
+$4 = 0x7fffffffdd6e "ThisIsMainArg"
+(gdb) frame 0
+#0  func () at /home/duckduck/DUCKLING/IDUB/gdb_demo/gdb_demo.cpp:20
+20		if (el != 0) {
+(gdb) fin
+0x00000000004011c1 in main (argc=2, argv=0x7fffffffda38) at /home/duckduck/DUCKLING/IDUB/gdb_demo/gdb_demo.cpp:27
+27		int ret = func();
+Value returned is $5 = 34
+(gdb) frame
+#0  0x00000000004011c1 in main (argc=2, argv=0x7fffffffda38) at /home/duckduck/DUCKLING/IDUB/gdb_demo/gdb_demo.cpp:27
+27		int ret = func();
+(gdb) list
+22		}
+23		return el--;
+24	}
+25	
+26	int main(int argc, const char *argv[]) {
+27		int ret = func();
+28		std::cout << ret << "\n";
+29		std::cout << xorAdd(ret, 2 * ret) << "\n";
+30	}
+(gdb) whatis ret
+type = int
+(gdb) whatis add<int>
+No symbol "add<int>" in current context.
+(gdb) set variable ret = 7
+(gdb) p ret
+$6 = 7
+(gdb) p ret = 42
+$7 = 42
+(gdb) b 9
+Breakpoint 2 at 0x40122e: file /home/duckduck/DUCKLING/IDUB/gdb_demo/gdb_demo.cpp, line 9.
+(gdb) b xorAdd<int>(int, int)
+Breakpoint 3 at 0x40121c: file /home/duckduck/DUCKLING/IDUB/gdb_demo/gdb_demo.cpp, line 7.
+(gdb) info breakpoints
+Num     Type           Disp Enb Address            What
+2       breakpoint     keep y   0x000000000040122e in xorAdd<int>(int, int) at /home/duckduck/DUCKLING/IDUB/gdb_demo/gdb_demo.cpp:9
+3       breakpoint     keep y   0x000000000040121c in xorAdd<int>(int, int) at /home/duckduck/DUCKLING/IDUB/gdb_demo/gdb_demo.cpp:7
+(gdb) c
+
+Breakpoint 3, xorAdd<int> (a=34, b=68) at /home/duckduck/DUCKLING/IDUB/gdb_demo/gdb_demo.cpp:7
+7		a += 8;
+(gdb) c
+
+Breakpoint 2, xorAdd<int> (a=42, b=68) at /home/duckduck/DUCKLING/IDUB/gdb_demo/gdb_demo.cpp:9
+9		b -= 7;
+(gdb) q
