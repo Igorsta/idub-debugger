@@ -1,36 +1,35 @@
 fun main(0): {
-	ir $0
+	input_reg $0
 	init
 	init
-	call test
-	str $1
+	call_func test
+	stack_to_reg $1
 	deinit
-	or $1
-	rtrv $0
-	ext
+	output_reg $1
+	reg_to_retval $0
+	exit_prog
 }
 
 fun test(0): {
-
-	ir $2
+	input_reg $2
 	init
-	rts $2
-	ir $2
+	reg_to_stack $2
+	input_reg $2
 	init
-	rts $2
-	ir $2
+	reg_to_stack $2
+	input_reg $2
 	init
-	rts $2
-	str $3
+	reg_to_stack $2
+	stack_to_reg $3
 	deinit
-	str $4
+	output_reg $3
+	stack_to_reg $4
 	deinit
-	str $5
+	output_reg $4
+	stack_to_reg $5
 	deinit
-	or $3
-	or $4
-	or $5
-	ir $2
-	rtrv $2
-	ret
+	output_reg $5
+	input_reg $2
+	reg_to_retval $2
+	func_return
 }

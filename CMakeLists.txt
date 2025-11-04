@@ -26,3 +26,4 @@ add_executable(my_vm ${MAIN_SOURCES})
 target_link_libraries(my_vm PRIVATE common_code)
 
 add_subdirectory(experimental)
+add_subdirectory(gdb_demo)
