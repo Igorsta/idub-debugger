@@ -1,9 +1,12 @@
 fun main(0): {
 	label START
 	init
-	jump_to LAST	
-
-	input_reg $0	# NONE OF THIS INSTRUCTIONS WILL EVER EXECUTE
+	input_reg $4
+	input_reg $5
+	cmp_reg $4, $5
+	jump_if_eq LAST			# WE DON'T DO ANY COMPARISON BEFORE?!
+	
+	input_reg $0
 	output_reg $0
 	input_reg $1
 	output_reg $1

@@ -1,5 +1,5 @@
 fun main(0): {
-	label START
+	label START				# THOSE LABELS ...
 	init
 	input_reg $0
 	output_reg $0
@@ -8,7 +8,7 @@ fun main(0): {
 	input_reg $2
 	output_reg $2
 
-	label LAST
+	label LAST				# ... DO ABSOULTELY USELESS
 	input_reg $3
 	output_reg $3
 	reg_to_retval $3

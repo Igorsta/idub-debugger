@@ -6,6 +6,6 @@ fun main(0): {
 	stack_to_reg $1
 	deinit
 	output_reg $1
-	reg_to_retval $0
-	exit_prog
+	reg_to_retval $0	
+	label WEIRD LABEl
 }
