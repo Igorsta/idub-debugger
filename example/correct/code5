@@ -1,10 +1,17 @@
-fun main(0): {
+fun main(0) : {
+	demand_reg $0
+	demand_reg $1
+	demand_reg $2
+	demand_reg $3
+	demand_reg $4
+	demand_reg $5
+	
 	label START
 	init
 	input_reg $4
 	input_reg $5
 	cmp_reg $4, $5
-	jump_if_eq LAST			# WE DON'T DO ANY COMPARISON BEFORE?!
+	jump_if_eq LAST
 	
 	input_reg $0
 	output_reg $0

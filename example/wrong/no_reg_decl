@@ -1,6 +1,5 @@
+# NO REGISTER DECLARATION!
 fun main(0): {
-	demand_reg $0
-	demand_reg $1
 	input_reg $0
 	init
 	init
@@ -13,10 +12,6 @@ fun main(0): {
 }
 
 fun test(0): {
-	demand_reg $2
-	demand_reg $3
-	demand_reg $4
-	demand_reg $5
 	input_reg $2
 	init
 	reg_to_stack $2

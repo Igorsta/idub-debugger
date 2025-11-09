@@ -1,4 +1,8 @@
 fun main(0): {
+	demand_reg $0
+	demand_reg $1
+	demand_reg $2
+	demand_reg $3
 	label START
 	init
 	jump_if_eq LAST			# WE DON'T DO ANY COMPARISON BEFORE?!

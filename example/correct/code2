@@ -1,4 +1,8 @@
 fun main(0): {
+	demand_reg $0
+	demand_reg $1
+	demand_reg $2
+	demand_reg $3
 	label START				# THOSE LABELS ...
 	init
 	input_reg $0
@@ -8,7 +12,7 @@ fun main(0): {
 	input_reg $2
 	output_reg $2
 
-	label LAST				# ... DO ABSOULTELY USELESS
+	label LAST				# ... DO ABSOULTELY NOTHING
 	input_reg $3
 	output_reg $3
 	reg_to_retval $3

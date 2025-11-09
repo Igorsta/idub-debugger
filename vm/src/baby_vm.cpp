@@ -71,8 +71,11 @@ using parse_instr_t = void(PARSE_OPCODE_ARGS);
 using bit64 = uint64_t;
 using code_block = std::vector<instrutction_t>;
 
-using func_id_t = bit64;
-using labl_id_t = bit64;
+using func_id_t = uint64_t;
+using labl_id_t = uint64_t;
+using reg_id_t = uint64_t;
+
+using reg_id_map = std::unordered_map<std::string, reg_id_t>;
 
 using labl_id_map = std::unordered_map<std::string, labl_id_t>;
 using labl_map = std::unordered_map<func_id_t, size_t>;
@@ -92,30 +95,28 @@ struct frame_t {
 	bit64 *stack_start;
 	bit64 *stack_head;
 	flag_data flags;
+	func_id_t cur_func_id;
 };
 
 struct function_t {
 	code_block body;
 	uint64_t no_of_args;
+	std::vector<bit64> regs;
 };
 
 struct memory_space {
 	const size_t MEM_STACK_SIZE;
-	const size_t REGISTERS_SIZE;
 	const size_t CALL_STACK_SIZE;
 
 	std::unique_ptr<bit64[]> MEM_STACK;
-	std::unique_ptr<bit64[]> REGISTERS;
 	std::unique_ptr<frame_t[]> CALL_STACK;
 
-	memory_space(size_t MEM_STACK_SIZE = 0, size_t REGISTERS_SIZE = 0, size_t CALL_STACK_SIZE = 0) :
+	memory_space(size_t MEM_STACK_SIZE = 10, size_t CALL_STACK_SIZE = 1000) :
 		MEM_STACK_SIZE(MEM_STACK_SIZE),
-		REGISTERS_SIZE(REGISTERS_SIZE),
 		CALL_STACK_SIZE(CALL_STACK_SIZE),
 		MEM_STACK(std::make_unique<bit64[]>(MEM_STACK_SIZE)),
-		REGISTERS(std::make_unique<bit64[]>(REGISTERS_SIZE)),
 		CALL_STACK(std::make_unique<frame_t[]>(CALL_STACK_SIZE)) {
-		assert(MEM_STACK && REGISTERS && CALL_STACK);
+		assert(MEM_STACK && CALL_STACK);
 	}
 };
 
@@ -131,13 +132,14 @@ struct thread_t {
 	memory_space memory;
 
 	void start_execution() {
-		int main_id = func_id.at("main");
+		func_id_t main_id = func_id.at("main");
 		const instrutction_t *instr = functions.at(main_id).body.data();
 		auto frame = memory.CALL_STACK.get();
 		auto mem = &memory;
 
 		frame->stack_head = memory.MEM_STACK.get();
 		frame->stack_start = memory.MEM_STACK.get();
+		frame->cur_func_id = main_id;
 
 		EXEC_START(instr, mem, frame, this);
 	}
@@ -151,69 +153,74 @@ public:
 	labl_id_map labl_decl;
 	labl_map label_pos;
 
+	reg_id_map reg_decl;
+
 	std::vector<size_t> jump_ops{};
 
-	func_id_t built_func;
-	bool is_building = false;
+	code_block built_func_body{};
 
-	void add_instr(instrutction_t &instr) {
-		assert(is_building);
-		functions_impl[built_func].body.push_back(instr);
-	}
+	void add_instr(instrutction_t &instr) { built_func_body.push_back(instr); }
 
 	void add_jump(instrutction_t &instr) {
-		assert(is_building);
-		jump_ops.push_back(functions_impl[built_func].body.size());
-		functions_impl[built_func].body.push_back(instr);
+		jump_ops.push_back(built_func_body.size());
+		add_instr(instr);
 	}
 
-	void define_func(std::string name, uint64_t no_of_args) {
-		assert(is_building == false);
-		is_building = true;
-		built_func = refer_func(name);
-		functions_impl[built_func];
-		functions_impl[built_func].no_of_args = no_of_args;
+	void define_labl(const std::string &name) {
+		label_pos[refer_label(name)] = built_func_body.size();
 	}
 
-	void define_labl(std::string name) {
-		assert(is_building);
-		label_pos[refer_label(name)] = functions_impl[built_func].body.size();
+	void define_reg(const std::string &name) {
+		assert(reg_decl.emplace(name, reg_decl.size()).second);
 	}
 
-	void commit_func() {
-		if (is_building == false) {
-			return;
-		}
-
+	void commit_func(const std::string &name, uint64_t no_of_args) {
 		for (const auto &[name, id] : labl_decl) {
 			assert(label_pos.find(id) != label_pos.end());
 		}
 		while (jump_ops.size()) {
 			int curr_pos = jump_ops.back();
 			jump_ops.pop_back();
-			instrutction_t &jmp_instr = functions_impl[built_func].body[curr_pos];
+			instrutction_t &jmp_instr = built_func_body[curr_pos];
 			labl_id_t label_id = jmp_instr.arg[0];
 			jmp_instr.arg[0] = label_pos[label_id] - curr_pos;
 		}
-		is_building = false;
+
+		functions_impl.emplace(refer_func(name), function_t{
+													 .body = built_func_body,
+													 .no_of_args = no_of_args,
+													 .regs = std::vector<bit64>(reg_decl.size()),
+												 });
+
+		built_func_body.clear();
+		reg_decl.clear();
+		label_pos.clear();
+		labl_decl.clear();
 	};
 
 	thread_t make_thread() {
+		assert(built_func_body.empty() && reg_decl.empty() && label_pos.empty() &&
+			   labl_decl.empty() && jump_ops.empty());
+
 		return {
 			.functions = functions_impl,
 			.func_id = func_decl,
-			.memory = memory_space(10, 10, 100),
+			.memory = memory_space(),
 		};
 	}
 
 	func_id_t refer_func(const std::string &input) {
-		assert(is_building);
 		return func_decl.emplace(input, func_decl.size()).first->second;
 	}
 
 	labl_id_t refer_label(const std::string &input) {
-		assert(is_building);
 		return labl_decl.emplace(input, labl_decl.size()).first->second;
+	}
+
+	reg_id_t refer_reg(const std::string &input) {
+		auto it = reg_decl.find(input);
+		assert(it != reg_decl.end());
+		return it->second;
 	}
 
 	void validate_prog() {
@@ -239,6 +246,7 @@ public:
 #define JUMP jump_to
 #define JUMP_EQ jump_if_eq
 #define CMP_REG cmp_reg
+#define DEMAND_REG demand_reg
 
 #define _N_ARGS args
 #define _N_ARGS_UTILS _N_ARGS::utils
@@ -276,8 +284,14 @@ public:
 	parse_instr_t macro;                                                                           \
 	}
 
+REQUIRE_ARGS(LABEL)
 namespace _N_PARSE_OTHER {
 parse_instr_t LABEL;
+}
+
+REQUIRE_ARGS(DEMAND_REG)
+namespace _N_PARSE_OTHER {
+parse_instr_t DEMAND_REG;
 }
 
 REQUIRED_FOR_SIMPLE(STCK_INIT)
@@ -295,9 +309,6 @@ REQUIRED_FOR_SIMPLE(CMP_REG)
 
 REQUIRED_FOR_JUMPS(JUMP)
 REQUIRED_FOR_JUMPS(JUMP_EQ)
-
-REQUIRE_ARGS(LABEL)
-
 ///////////////////// INSTRUCTION_DEFINITION ////////////////////////////
 
 // STCK_INIT
@@ -331,7 +342,7 @@ constexpr std::string regex_arg_t(const operand_t &arg) {
 	case operand_t::DECIMAL_NUM:
 		return "(\\d+)";
 	case operand_t::REGISTER_ID:
-		return "\\$(\\d+)";
+		return "\\$([A-Za-z0-9_]+)";
 	case operand_t::FUNC_NAME:
 		return "([A-Za-z0-9_]+)";
 	case operand_t::LABEL_ID:
@@ -352,7 +363,7 @@ constexpr bit64 parse_arg_t(thread_builder_t &builder, operand_t type, std::stri
 	case operand_t::DECIMAL_NUM:
 		return std::stoull(input);
 	case operand_t::REGISTER_ID:
-		return std::stoull(input);
+		return builder.refer_reg(input);
 	case operand_t::FUNC_NAME:
 		return builder.refer_func(input);
 	case operand_t::LABEL_ID:
@@ -386,6 +397,7 @@ ENLIST_OPERANDS(JUMP, operand_t::LABEL_ID)
 ENLIST_OPERANDS(JUMP_EQ, operand_t::LABEL_ID)
 
 ENLIST_OPERANDS(LABEL, operand_t::LABEL_ID)
+ENLIST_OPERANDS(DEMAND_REG, operand_t::REGISTER_ID)
 
 namespace _N_ARGS_UTILS {
 std::unordered_map<std::string, const std::vector<operand_t> &> str_to_arg = {
@@ -404,6 +416,7 @@ std::unordered_map<std::string, const std::vector<operand_t> &> str_to_arg = {
 	{nameof(LABEL), LABEL()},
 	{nameof(JUMP), JUMP()},
 	{nameof(JUMP_EQ), JUMP_EQ()},
+	{nameof(DEMAND_REG), DEMAND_REG()},
 };
 
 }; // namespace _N_ARGS_UTILS
@@ -447,7 +460,7 @@ PARSE_SIMPLE_IMPL(CMP_REG)
 		}                                                                                          \
                                                                                                    \
 		int other_idx = 1;                                                                         \
-		const auto &args = ::_N_ARGS::macro();                                                      \
+		const auto &args = ::_N_ARGS::macro();                                                     \
 		for (int i = 0; i < args.size(); i++) {                                                    \
 			if (args[i] == operand_t::LABEL_ID) {                                                  \
 				instr.arg[0] =                                                                     \
@@ -465,6 +478,7 @@ PARSE_JUMPS_IMPL(JUMP)
 PARSE_JUMPS_IMPL(JUMP_EQ)
 
 void _N_PARSE_OTHER::LABEL(PARSE_OPCODE_ARGS) { builder.define_labl(matches[1]); }
+void _N_PARSE_OTHER::DEMAND_REG(PARSE_OPCODE_ARGS) { builder.define_reg(matches[1]); }
 
 namespace _N_PARSE_UTILS {
 void nop(PARSE_OPCODE_ARGS) { return; }
@@ -513,6 +527,8 @@ void parse_line(const std::string &line, thread_builder_t &builder) {
 			{nameof(JUMP), {make_opcode_pattern(nameof(JUMP)), &::_N_PARSE_JUMPS::JUMP}},
 			{nameof(JUMP_EQ), {make_opcode_pattern(nameof(JUMP_EQ)), &::_N_PARSE_JUMPS::JUMP_EQ}},
 			{nameof(LABEL), {make_opcode_pattern(nameof(LABEL)), &::_N_PARSE_OTHER::LABEL}},
+			{nameof(DEMAND_REG),
+			 {make_opcode_pattern(nameof(DEMAND_REG)), &::_N_PARSE_OTHER::DEMAND_REG}},
 			{"#", {std::regex("\\s*(?:#.*)?"), nop}},
 		};
 
@@ -551,14 +567,12 @@ thread_t file_parse(std::string &content) {
 	for (auto it = func_begin; it != func_end; it++) {
 		const std::smatch &matches = *it;
 
-		res.define_func(matches[1], stoull(matches[2]));
-
 		std::stringstream code(matches[3]);
 		static std::string line;
 		while (getline(code, line)) {
 			parse_line(line, res);
 		}
-		res.commit_func();
+		res.commit_func(matches[1], stoull(matches[2]));
 	}
 
 	res.validate_prog();
@@ -589,9 +603,17 @@ INLINE static bit64 *last_on_stck(CONST_OPCODE_ARGS) {
 	return (frame->stack_head - 1);
 }
 
-INLINE static bit64& get_reg(bit64 arg0, CONST_OPCODE_ARGS) {
-	assert(arg0 < mem_space->REGISTERS_SIZE);
-	return mem_space->REGISTERS[arg0];
+INLINE static bit64 &get_reg(bit64 arg0, REF_OPCODE_ARGS) {
+	auto cur_func = frame->cur_func_id;
+	auto &all_func = exec_program->functions;
+
+	auto it = all_func.find(cur_func);
+	assert(it != all_func.end());
+
+	auto &function = it->second;
+	assert(arg0 < function.regs.size());
+
+	return function.regs[arg0];
 }
 
 void _N_EXEC_RAW::STCK_INIT(REF_OPCODE_ARGS) {
@@ -695,7 +717,7 @@ void _N_EXEC_RAW::CMP_REG(REF_OPCODE_ARGS) {
 	frame->flags.first_was_bigger = (reg0 > reg1);
 }
 
-void _N_EXEC_RAW::JUMP_EQ(REF_OPCODE_ARGS) {		
+void _N_EXEC_RAW::JUMP_EQ(REF_OPCODE_ARGS) {
 	if (frame->flags.were_equal) {
 		instr += instr->arg[0];
 	} else {

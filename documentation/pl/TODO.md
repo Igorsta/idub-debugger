@@ -3,7 +3,7 @@
 	- spis rzecz
 
 1. Dotychczasowe maszyny wirtualne:
-	- GDB
+	- __GDB__
 	- LLDB
 	- ocamldebug
 	- PDB
@@ -13,14 +13,15 @@
 	- maszyna stosowa czy rejestrowa: __rejestrowa__
 	- rejestry
 		- ilość wirtualnych rejestrów: __nieograniczona__
-		- dostępność rejestrów: __ograniczona, programista może się odwoływać tylko do rejestrów aktualnie wykonywanej funkcji__
+		- dostępność rejestrów: __ograniczona, programista może się odwoływać tylko do rejestrów aktualnie wykonywanej funkcji. Programista musi wcześniej zadeklarować rejsetr__
 		- możliwość wprowadzenia własnych rejestrów: __wspiarana, programista może stworzyć własne rejestry__
-		- odwoływanie się do rejestrów: __${nazwa_funkcji}_0, ${nazwa_funkcji}_1, ${nazwa_funkcji}_2 ... dla kolejnych argumentów funkcji, ${nazwa_programisty} dla rejstrów programisty. Wprowadzona nazwa nie może kolidować z nazwami już istniejącymi__
+		- odwoływanie się do rejestrów: __${nazwa_rejstru}__
 	- operacje na rejestrach
 		- dostępne operacje arytmetyczne: __and, or, neg, xor, +, -, /, *__
 		- typy rejestrów: __określone przez instrukcje__
-		- operacje porównania: __zainspirowane z Ducklinga__
-	- ramka
+		- operacje porównania: __porównanie dwóch rejestrów, testowanie zawartości pojedynczego rejestru__
+	- ramka wywołań:
+		- zawiera: __ID aktualnie wykonywanej funkcji, aktualne flagi, przedział na stosie zmiennych oraz instrukcje powrotną__
 	- stos pamięci:
 		- 
 	- funkcje:
