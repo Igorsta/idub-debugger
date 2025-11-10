@@ -247,6 +247,7 @@ public:
 #define JUMP_EQ jump_if_eq
 #define CMP_REG cmp_reg
 #define DEMAND_REG demand_reg
+#define INIT_IMM init_imm
 #define ADD_IN_PLACE add_in_place
 #define MUL_IN_PLACE mul_in_place
 #define SUB_IN_PLACE sub_in_place
@@ -290,14 +291,13 @@ public:
 	}
 
 REQUIRE_ARGS(LABEL)
+REQUIRE_ARGS(DEMAND_REG)
+REQUIRE_ARGS(INIT_IMM)
 namespace _N_PARSE_OTHER {
 parse_instr_t LABEL;
-}
-
-REQUIRE_ARGS(DEMAND_REG)
-namespace _N_PARSE_OTHER {
 parse_instr_t DEMAND_REG;
-}
+
+} // namespace _N_PARSE_OTHER
 
 REQUIRED_FOR_SIMPLE(STCK_INIT)
 REQUIRED_FOR_SIMPLE(STCK_DEINIT)
@@ -311,6 +311,7 @@ REQUIRED_FOR_SIMPLE(FUNC_RET)
 REQUIRED_FOR_SIMPLE(EXIT_PROG)
 REQUIRED_FOR_SIMPLE(CALL)
 REQUIRED_FOR_SIMPLE(CMP_REG)
+REQUIRED_FOR_SIMPLE(INIT_IMM)
 
 REQUIRED_FOR_SIMPLE(ADD_IN_PLACE)
 REQUIRED_FOR_SIMPLE(MUL_IN_PLACE)
@@ -409,6 +410,8 @@ ENLIST_OPERANDS(JUMP_EQ, operand_t::LABEL_ID)
 
 ENLIST_OPERANDS(LABEL, operand_t::LABEL_ID)
 ENLIST_OPERANDS(DEMAND_REG, operand_t::REGISTER_ID)
+ENLIST_OPERANDS(INIT_IMM, operand_t::REGISTER_ID, operand_t::DECIMAL_NUM)
+
 ENLIST_OPERANDS(ADD_IN_PLACE, operand_t::REGISTER_ID, operand_t::REGISTER_ID)
 ENLIST_OPERANDS(MUL_IN_PLACE, operand_t::REGISTER_ID, operand_t::REGISTER_ID)
 ENLIST_OPERANDS(DIV_IN_PLACE, operand_t::REGISTER_ID, operand_t::REGISTER_ID)
@@ -438,6 +441,7 @@ std::unordered_map<std::string, const std::vector<operand_t> &> str_to_arg = {
 	{nameof(SUB_IN_PLACE), SUB_IN_PLACE()},
 	{nameof(DIV_IN_PLACE), DIV_IN_PLACE()},
 	{nameof(MOD_IN_PLACE), MOD_IN_PLACE()},
+	{nameof(INIT_IMM), INIT_IMM()},	
 };
 
 }; // namespace _N_ARGS_UTILS
@@ -476,6 +480,7 @@ PARSE_SIMPLE_IMPL(MUL_IN_PLACE)
 PARSE_SIMPLE_IMPL(SUB_IN_PLACE)
 PARSE_SIMPLE_IMPL(DIV_IN_PLACE)
 PARSE_SIMPLE_IMPL(MOD_IN_PLACE)
+PARSE_SIMPLE_IMPL(INIT_IMM)
 
 #define PARSE_JUMPS_IMPL(macro)                                                                    \
 	void _N_PARSE_JUMPS::macro(PARSE_OPCODE_ARGS) {                                                \
@@ -555,6 +560,7 @@ void parse_line(const std::string &line, thread_builder_t &builder) {
 			{nameof(MOD_IN_PLACE), {make_opcode_pattern(nameof(MOD_IN_PLACE)), &MOD_IN_PLACE}},
 			{nameof(DIV_IN_PLACE), {make_opcode_pattern(nameof(DIV_IN_PLACE)), &DIV_IN_PLACE}},
 			{nameof(SUB_IN_PLACE), {make_opcode_pattern(nameof(SUB_IN_PLACE)), &SUB_IN_PLACE}},
+			{nameof(INIT_IMM), {make_opcode_pattern(nameof(INIT_IMM)), &INIT_IMM}},
 
 			{nameof(JUMP), {make_opcode_pattern(nameof(JUMP)), &::_N_PARSE_JUMPS::JUMP}},
 			{nameof(JUMP_EQ), {make_opcode_pattern(nameof(JUMP_EQ)), &::_N_PARSE_JUMPS::JUMP_EQ}},
@@ -757,6 +763,13 @@ void _N_EXEC_RAW::JUMP_EQ(REF_OPCODE_ARGS) {
 	}
 }
 
+void _N_EXEC_RAW::INIT_IMM(REF_OPCODE_ARGS) {
+	auto arg0 = instr->arg[0];
+	auto arg1 = instr->arg[1];
+
+	get_reg(arg1, FRWARD_ARGS) = arg1;
+}
+
 #define EXEC_ARITH_IN_PLACE_IMPL(macro, oper)                                                      \
 	void _N_EXEC_RAW::macro(REF_OPCODE_ARGS) {                                                     \
 		auto arg0 = instr->arg[0];                                                                 \
@@ -791,6 +804,7 @@ INSTR_OFFSET_IMPL(MUL_IN_PLACE, 1)
 INSTR_OFFSET_IMPL(MOD_IN_PLACE, 1)
 INSTR_OFFSET_IMPL(SUB_IN_PLACE, 1)
 INSTR_OFFSET_IMPL(DIV_IN_PLACE, 1)
+INSTR_OFFSET_IMPL(INIT_IMM, 1)
 
 INSTR_OFFSET_IMPL(FUNC_RET, 0)
 INSTR_OFFSET_IMPL(CALL, 0)
@@ -824,6 +838,7 @@ EXEC_FULL_IMPL(MUL_IN_PLACE)
 EXEC_FULL_IMPL(SUB_IN_PLACE)
 EXEC_FULL_IMPL(MOD_IN_PLACE)
 EXEC_FULL_IMPL(DIV_IN_PLACE)
+EXEC_FULL_IMPL(INIT_IMM)
 
 void _N_EXEC_FULL::EXIT_PROG(OPCODE_ARGS) {
 	_N_EXEC_RAW::EXIT_PROG(FRWARD_ARGS);
