@@ -293,6 +293,7 @@ public:
 #define MOD_IN_PLACE mod_in_place
 #define DIV_IN_PLACE div_in_place
 #define ALLOC_HEAP alloc_heap
+#define DEALLOC_HEAP dealloc_heap
 
 
 #define _N_ARGS args
@@ -354,6 +355,7 @@ REQUIRED_FOR_SIMPLE(CALL)
 REQUIRED_FOR_SIMPLE(CMP_REG)
 REQUIRED_FOR_SIMPLE(INIT_IMM)
 REQUIRED_FOR_SIMPLE(ALLOC_HEAP)
+REQUIRED_FOR_SIMPLE(DEALLOC_HEAP)
 
 REQUIRED_FOR_SIMPLE(ADD_IN_PLACE)
 REQUIRED_FOR_SIMPLE(MUL_IN_PLACE)
@@ -453,7 +455,9 @@ ENLIST_OPERANDS(JUMP_EQ, operand_t::LABEL_ID)
 ENLIST_OPERANDS(LABEL, operand_t::LABEL_ID)
 ENLIST_OPERANDS(DEMAND_REG, operand_t::REGISTER_ID)
 ENLIST_OPERANDS(INIT_IMM, operand_t::REGISTER_ID, operand_t::DECIMAL_NUM)
+
 ENLIST_OPERANDS(ALLOC_HEAP, operand_t::REGISTER_ID, operand_t::REGISTER_ID)
+ENLIST_OPERANDS(DEALLOC_HEAP, operand_t::REGISTER_ID)
 
 ENLIST_OPERANDS(ADD_IN_PLACE, operand_t::REGISTER_ID, operand_t::REGISTER_ID)
 ENLIST_OPERANDS(MUL_IN_PLACE, operand_t::REGISTER_ID, operand_t::REGISTER_ID)
@@ -486,6 +490,7 @@ std::unordered_map<std::string, const std::vector<operand_t> &> str_to_arg = {
 	{nameof(MOD_IN_PLACE), MOD_IN_PLACE()},
 	{nameof(INIT_IMM), INIT_IMM()},	
 	{nameof(ALLOC_HEAP), ALLOC_HEAP()},	
+	{nameof(DEALLOC_HEAP), DEALLOC_HEAP()},	
 };
 
 }; // namespace _N_ARGS_UTILS
@@ -526,6 +531,7 @@ PARSE_SIMPLE_IMPL(DIV_IN_PLACE)
 PARSE_SIMPLE_IMPL(MOD_IN_PLACE)
 PARSE_SIMPLE_IMPL(INIT_IMM)
 PARSE_SIMPLE_IMPL(ALLOC_HEAP)
+PARSE_SIMPLE_IMPL(DEALLOC_HEAP)
 
 #define PARSE_JUMPS_IMPL(macro)                                                                    \
 	void _N_PARSE_JUMPS::macro(PARSE_OPCODE_ARGS) {                                                \
@@ -607,6 +613,7 @@ void parse_line(const std::string &line, thread_builder_t &builder) {
 			{nameof(SUB_IN_PLACE), {make_opcode_pattern(nameof(SUB_IN_PLACE)), &SUB_IN_PLACE}},
 			{nameof(INIT_IMM), {make_opcode_pattern(nameof(INIT_IMM)), &INIT_IMM}},
 			{nameof(ALLOC_HEAP), {make_opcode_pattern(nameof(ALLOC_HEAP)), &ALLOC_HEAP}},
+			{nameof(DEALLOC_HEAP), {make_opcode_pattern(nameof(DEALLOC_HEAP)), &DEALLOC_HEAP}},
 
 			{nameof(JUMP), {make_opcode_pattern(nameof(JUMP)), &::_N_PARSE_JUMPS::JUMP}},
 			{nameof(JUMP_EQ), {make_opcode_pattern(nameof(JUMP_EQ)), &::_N_PARSE_JUMPS::JUMP_EQ}},
@@ -823,6 +830,12 @@ void _N_EXEC_RAW::ALLOC_HEAP(REF_OPCODE_ARGS) {
 	get_reg(arg0, FRWARD_ARGS) = mem_space->heap.allocate(get_reg(arg1, FRWARD_ARGS));
 }
 
+void _N_EXEC_RAW::DEALLOC_HEAP(REF_OPCODE_ARGS) {
+	auto arg0 = instr->arg[0];
+
+	mem_space->heap.deallocate(get_reg(arg0, FRWARD_ARGS));
+}
+
 #define EXEC_ARITH_IN_PLACE_IMPL(macro, oper)                                                      \
 	void _N_EXEC_RAW::macro(REF_OPCODE_ARGS) {                                                     \
 		auto arg0 = instr->arg[0];                                                                 \
@@ -859,6 +872,8 @@ INSTR_OFFSET_IMPL(SUB_IN_PLACE, 1)
 INSTR_OFFSET_IMPL(DIV_IN_PLACE, 1)
 INSTR_OFFSET_IMPL(INIT_IMM, 1)
 INSTR_OFFSET_IMPL(ALLOC_HEAP, 1)
+INSTR_OFFSET_IMPL(DEALLOC_HEAP, 1)
+
 
 INSTR_OFFSET_IMPL(FUNC_RET, 0)
 INSTR_OFFSET_IMPL(CALL, 0)
@@ -894,6 +909,7 @@ EXEC_FULL_IMPL(MOD_IN_PLACE)
 EXEC_FULL_IMPL(DIV_IN_PLACE)
 EXEC_FULL_IMPL(INIT_IMM)
 EXEC_FULL_IMPL(ALLOC_HEAP)
+EXEC_FULL_IMPL(DEALLOC_HEAP)
 
 void _N_EXEC_FULL::EXIT_PROG(OPCODE_ARGS) {
 	_N_EXEC_RAW::EXIT_PROG(FRWARD_ARGS);
