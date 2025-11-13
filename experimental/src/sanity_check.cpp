@@ -1,5 +1,9 @@
+// This file serves as sanity check for the author
+// together with site CompilerExplorer
+// some of th code was generated/inspired by AI
 #include <bits/stdc++.h>
 #include <cstddef>
+#include <cstdint>
 #include "musttail.h"
 
 template <std::convertible_to<int>... Args>
@@ -102,16 +106,36 @@ void element::FUNC_NAME2(int arg) {
 // Step 2: expand first, then stringify
 #define nameof(x) STRINGIFY(x)
 
+enum class EXEC_MODES {
+	TAIL,
+	STACK,
+};
+
+template <EXEC_MODES mode = EXEC_MODES::TAIL>
+uint64_t factorial(uint64_t n, uint64_t acc = 1) {
+	if (n == 0) {
+		return acc;
+	}
+
+	if constexpr (mode == EXEC_MODES::TAIL) {
+		MUST_TAIL return factorial(n - 1, n * acc);
+	} else {
+		return factorial(n - 1, n * acc);
+	}
+}
+
 
 int main() {
-    std::cout << nameof(STCK_INIT) << '\n';
-	std::cout << nameof(REG_TO_STCK) << '\n';
+	// std::cout << nameof(STCK_INIT) << '\n';
+	// std::cout << nameof(REG_TO_STCK) << '\n';
 
-	std::cout << sum(2, 1, 3, 7, 6, 9, 4, 2, 0) << "\n";
-	// std::cout << sum2(2, 1, 3, 7, 6, 9, 4, 2, 0) << "\n";
-	std::cout << sum3(2, 1, 3, 7, 6, 9, 4, 2, 0) << "\n";
-	assert(switch_func(21) == 37 && switch_func(0) == 0);
-	collatz(837799);
+	// std::cout << sum(2, 1, 3, 7, 6, 9, 4, 2, 0) << "\n";
+	// // std::cout << sum2(2, 1, 3, 7, 6, 9, 4, 2, 0) << "\n";
+	// std::cout << sum3(2, 1, 3, 7, 6, 9, 4, 2, 0) << "\n";
+	// assert(switch_func(21) == 37 && switch_func(0) == 0);
+	// collatz(837799);
 
-	element::my_cool_func_name(5);
+	// element::my_cool_func_name(5);
+
+	factorial(5);
 }

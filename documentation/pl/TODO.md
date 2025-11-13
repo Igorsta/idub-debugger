@@ -1,6 +1,11 @@
 0. Disclaimer
-	- wykorzystywane z Ducklinga: __pragma DIAGNOSTICS, MUST_INLINE, INLINE, opcode functions__
-	- spis rzecz
+	- wykorzystywane bezpośrednio z Ducklinga: __pragma DIAGNOSTICS, MUST_INLINE, INLINE, opcode functions__
+	- zaimplementowana maszyna bazuje na DuckVM, ale ze względu na limity czasowe zastosowano uproszczenia, mianowicie:
+		- wszystkie wartości na stosie/rejestry mają 64-bity
+		- każda funkcja ma określoną w trakcie kompilacji ilość rejestrów
+		- nie ma statycznej walidacji stosu - błędy mogą być wykrywane najwyżej w trakcie wykonywania kodu
+		- mniejszy zestaw instrukcji (prawdopodobnie najmniej istotne)
+	- elementy debuggera (bezpośrednio powiązane z projektem licencjanckim) są 
 
 1. Dotychczasowe maszyny wirtualne:
 	- __GDB__
