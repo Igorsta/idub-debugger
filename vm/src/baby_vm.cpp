@@ -20,6 +20,12 @@ enum class operand_t;
 
 ///////////////////// EXEC MACRO ////////////////////////////
 
+#define CORE_ASSERT(cond, ...)                                                                     \
+	if (!(cond)) {                                                                                 \
+		std::print(__VA_ARGS__);                                                                   \
+		assert(false);                                                                             \
+	}
+
 #define EXEC(instr, mem_space, frame, program) instr->action(instr, mem_space, frame, program)
 
 #define CONST_OPCODE_ARGS                                                                          \
@@ -110,59 +116,55 @@ struct heap_t {
 	std::set<std::pair<bit64, bit64>> allocated;
 	const size_t size;
 
-	heap_t(size_t alloc = 2048) : content(std::make_unique<bit64[]>(alloc)), allocated{}, size{alloc} {
-		assert(content);
-	}
+	heap_t(size_t alloc = 2048) :
+		content(std::make_unique<bit64[]>(alloc)),
+		allocated{},
+		size{alloc} {CORE_ASSERT(content, "Couldn't successfully allocate buffer for heap!")}
 
-	bit64 allocate(bit64 chunk_size) {
+		bit64 allocate(bit64 chunk_size) {
 		auto it = allocated.begin();
 		int start = 0;
 
-		while (it != allocated.end() &&	 start + chunk_size > it->first) {
+		while (it != allocated.end() && start + chunk_size > it->first) {
 			start = it->first + it->second;
 			it++;
 		}
 
-		assert(start + chunk_size <= size);
+		CORE_ASSERT(start + chunk_size <= size,
+					"Failed to allocate chunk: {0} + {1} is bigger than {2}", start, chunk_size,
+					size);
 		allocated.insert({start, chunk_size});
 
 		return start;
 	}
 
 	void deallocate(bit64 ptr) {
-		for (auto it = allocated.begin(); it != allocated.end(); it++) {
-			if (it->first == ptr) {
-				allocated.erase(it);
-				return;
-			}
-		}
+		auto it = allocated.lower_bound({ptr, 0});
 
-		assert(false);
+		CORE_ASSERT(it != allocated.end() && it->first == ptr,
+					"address {} was not used for allocation", ptr);
+
+		allocated.erase(it);
+		return;
 	}
 
 	bit64 read(bit64 ptr) {
-		// return content[ptr]; <- version without checks
+		auto it = allocated.lower_bound({ptr, 0});
 
-		for (auto it = allocated.begin(); it != allocated.end(); ++it) {
-			if (it->first <= ptr && ptr < it->first + it->second) {
-				return content[ptr];
-			}
-		}
+		CORE_ASSERT(it != allocated.begin() && (--it)->first <= ptr && ptr < it->first + it->second,
+					"address {} was not allocated", ptr);
 
-		assert(false);
+		return content[ptr];
 	}
 
 	void write(bit64 ptr, bit64 val) {
-		// content[ptr] = val; <- version without checks
-		// return;
+		auto it = allocated.lower_bound({ptr, 0});
 
-		for (auto it = allocated.begin(); it != allocated.end(); ++it) {
-			if (it->first <= ptr && ptr < it->first + it->second) {
-				content[ptr] = val;
-			}
-		}
+		CORE_ASSERT(it != allocated.begin() && (--it)->first <= ptr && ptr < it->first + it->second,
+					"address {} was not allocated", ptr);
 
-		assert(false);
+		content[ptr] = val;
+		return;
 	}
 };
 
@@ -180,7 +182,7 @@ struct memory_space {
 		MEM_STACK(std::make_unique<bit64[]>(MEM_STACK_SIZE)),
 		CALL_STACK(std::make_unique<frame_t[]>(CALL_STACK_SIZE)),
 		heap{} {
-		assert(MEM_STACK && CALL_STACK);
+		CORE_ASSERT(MEM_STACK && CALL_STACK, "Couldn't allocate memory and call stacks");
 	}
 };
 
@@ -235,12 +237,12 @@ public:
 	}
 
 	void define_reg(const std::string &name) {
-		assert(reg_decl.emplace(name, reg_decl.size()).second);
+		CORE_ASSERT(reg_decl.emplace(name, reg_decl.size()).second, "The register {} has been defined two times", name);
 	}
 
 	void commit_func(const std::string &name, uint64_t no_of_args) {
 		for (const auto &[name, id] : labl_decl) {
-			assert(label_pos.find(id) != label_pos.end());
+			CORE_ASSERT(label_pos.find(id) != label_pos.end(), "label {} was refered but not defined", name);
 		}
 		while (jump_ops.size()) {
 			int curr_pos = jump_ops.back();
@@ -263,8 +265,9 @@ public:
 	};
 
 	thread_t make_thread() {
-		assert(built_func_body.empty() && reg_decl.empty() && label_pos.empty() &&
-			   labl_decl.empty() && jump_ops.empty());
+		CORE_ASSERT(built_func_body.empty() && reg_decl.empty() && label_pos.empty() &&
+						labl_decl.empty() && jump_ops.empty(),
+					"Trying to make a thread without having a full-built func");
 
 		return {
 			.functions = functions_impl,
@@ -283,13 +286,13 @@ public:
 
 	reg_id_t refer_reg(const std::string &input) {
 		auto it = reg_decl.find(input);
-		assert(it != reg_decl.end());
+		CORE_ASSERT(it != reg_decl.end(), "Using undeclared reguster {}", input);
 		return it->second;
 	}
 
 	void validate_prog() {
 		for (auto &[_, id] : func_decl) {
-			assert(functions_impl.find(id) != functions_impl.end());
+			CORE_ASSERT(functions_impl.find(id) != functions_impl.end(), "function {} does not have implementation", _);
 		}
 	}
 };
@@ -321,7 +324,6 @@ public:
 #define DEALLOC_HEAP dealloc_heap
 #define READ_HEAP read_heap
 #define WRITE_HEAP write_heap
-
 
 #define _N_ARGS args
 #define _N_ARGS_UTILS _N_ARGS::utils
@@ -394,24 +396,6 @@ REQUIRED_FOR_SIMPLE(MOD_IN_PLACE)
 
 REQUIRED_FOR_JUMPS(JUMP)
 REQUIRED_FOR_JUMPS(JUMP_EQ)
-///////////////////// INSTRUCTION_DEFINITION ////////////////////////////
-
-// STCK_INIT
-// STCK_DEINIT
-// REG_TO_STCK
-// STCK_TO_REG
-// REG_TO_RVAL
-// REG_TO_REG
-// INPUT_TO_REG
-// OUTPUT_REG
-// FUNC_RET
-// EXIT_PROG
-// CALL
-
-// struct code_pos {
-// 	uint64_t pos;
-// 	func_id func;
-// };
 
 ///////////////////// PARSING INSTRUCTIONS ////////////////////////////
 
@@ -435,9 +419,10 @@ constexpr std::string regex_arg_t(const operand_t &arg) {
 		return "([A-Za-z0-9_]+)";
 	case operand_t::LABEL_ID:
 		return "([A-Za-z0-9_]+)";
-	default:
-		assert(false);
 	}
+
+	//@todo make it BEAUTIFUL!
+	CORE_ASSERT(false, "operand {} does not have a defined regex", int(arg));
 };
 
 constexpr std::string regex_func() {
@@ -459,6 +444,8 @@ constexpr bit64 parse_arg_t(thread_builder_t &builder, operand_t type, std::stri
 	case operand_t::LABEL_ID:
 		return builder.refer_label(input);
 	}
+
+	CORE_ASSERT(false, "operand {} does not have a defined regex", int(type));
 };
 } // namespace _N_PARSE_UTILS
 
@@ -526,7 +513,7 @@ std::unordered_map<std::string, const std::vector<operand_t> &> str_to_arg = {
 	{nameof(ALLOC_HEAP), ALLOC_HEAP()},
 	{nameof(DEALLOC_HEAP), DEALLOC_HEAP()},
 	{nameof(READ_HEAP), READ_HEAP()},
-	{nameof(WRITE_HEAP), WRITE_HEAP()},	
+	{nameof(WRITE_HEAP), WRITE_HEAP()},
 };
 
 }; // namespace _N_ARGS_UTILS
@@ -609,7 +596,7 @@ std::regex make_opcode_pattern(std::string op_name) {
 	using _N_ARGS_UTILS::str_to_arg;
 
 	auto it = str_to_arg.find(op_name);
-	assert(it != str_to_arg.end());
+	CORE_ASSERT(it != str_to_arg.end(), "{} does not have defined operations", op_name);
 	const auto &args = it->second;
 
 	for (int i = 0; i < args.size(); i++) {
@@ -683,10 +670,8 @@ void parse_line(const std::string &line, thread_builder_t &builder) {
 			return;
 		}
 	}
-	std::cout << "line: \"" << line << "\"\n";
 
-	assert(false);
-	return;
+	CORE_ASSERT(false, "Line \"{}\" could not be parsed", line);
 }
 
 thread_t file_parse(std::string &content) {
@@ -730,7 +715,7 @@ std::string read_file(std::string file_name) {
 //////////////////////////// OPCODE RAW ACTION IMPL ////////////////////////////
 
 INLINE static bit64 *last_on_stck(CONST_OPCODE_ARGS) {
-	assert(frame->stack_start < frame->stack_head);
+	CORE_ASSERT(frame->stack_start < frame->stack_head, "Trying to access part of the stack what belongs to other function");
 	return (frame->stack_head - 1);
 }
 
@@ -739,17 +724,20 @@ INLINE static bit64 &get_reg(bit64 arg0, REF_OPCODE_ARGS) {
 	auto &all_func = exec_program->functions;
 
 	auto it = all_func.find(cur_func);
-	assert(it != all_func.end());
+	CORE_ASSERT(it != all_func.end(), "Weird, currently executed function (id: {}) is not among the functions of thread", cur_func);
 
 	auto &function = it->second;
-	assert(arg0 < function.regs.size());
+	CORE_ASSERT(
+		arg0 < function.regs.size(),
+		"Trying to access registr out of bounds: function has {} registers and optcode asks for {}",
+		function.regs.size(), arg0);
 
 	return function.regs[arg0];
 }
 
 void _N_EXEC_RAW::STCK_INIT(REF_OPCODE_ARGS) {
 	auto end = mem_space->MEM_STACK.get() + mem_space->MEM_STACK_SIZE;
-	assert(frame->stack_head + 1 < end);
+	CORE_ASSERT(frame->stack_head + 1 < end, "Stack overflow");
 
 	frame->stack_head++;
 }
@@ -799,13 +787,13 @@ void _N_EXEC_RAW::OUTPUT_REG(REF_OPCODE_ARGS) {
 void _N_EXEC_RAW::CALL(REF_OPCODE_ARGS) {
 	auto arg0 = instr->arg[0];
 	auto it = exec_program->functions.find(arg0);
-	assert(it != exec_program->functions.end());
+	CORE_ASSERT(it != exec_program->functions.end(), "Call to undeclared function");
 
 	frame->instr = instr + 1;
 
 	auto prev_frame = frame;
 	auto end = mem_space->CALL_STACK.get() + mem_space->CALL_STACK_SIZE;
-	assert(frame + 1 < end);
+	CORE_ASSERT(frame + 1 < end, "Call stack overflow");
 	frame++;
 
 	frame->stack_head = prev_frame->stack_head;
@@ -813,7 +801,7 @@ void _N_EXEC_RAW::CALL(REF_OPCODE_ARGS) {
 	auto &[_, func_code] = *it;
 
 	auto shared_memory = 1 + func_code.no_of_args;
-	assert(frame->stack_start + shared_memory <= frame->stack_head);
+	CORE_ASSERT(frame->stack_start + shared_memory <= frame->stack_head, "I guess check number of elements on stack?");	//@todo: WTH is going on here?
 	frame->stack_start = frame->stack_head - shared_memory;
 
 	instr = func_code.body.data();
@@ -821,7 +809,7 @@ void _N_EXEC_RAW::CALL(REF_OPCODE_ARGS) {
 
 void _N_EXEC_RAW::FUNC_RET(REF_OPCODE_ARGS) {
 	auto end = mem_space->MEM_STACK.get() + mem_space->MEM_STACK_SIZE;
-	assert(frame->stack_start + 1 < end);
+	CORE_ASSERT(frame->stack_start + 1 < end, "Data stackoverflow: couldn't acquire memory to return result from function");
 
 	frame->stack_head = frame->stack_start + 1;
 	frame--;
@@ -829,8 +817,8 @@ void _N_EXEC_RAW::FUNC_RET(REF_OPCODE_ARGS) {
 }
 
 void _N_EXEC_RAW::EXIT_PROG(REF_OPCODE_ARGS) {
-	assert(frame->stack_head == mem_space->MEM_STACK.get() + 1);
-	assert(frame == mem_space->CALL_STACK.get());
+	CORE_ASSERT(frame->stack_head == mem_space->MEM_STACK.get() + 1, "When exiting program, only one element should be on memory stack");
+	CORE_ASSERT(frame == mem_space->CALL_STACK.get(), "You cannot exit prgram from other function than main (yet)");
 
 	std::cout << std::format("program exited with {}\n", *mem_space->MEM_STACK.get());
 }
@@ -887,9 +875,8 @@ void _N_EXEC_RAW::READ_HEAP(REF_OPCODE_ARGS) {
 	auto arg0 = instr->arg[0];
 	auto arg1 = instr->arg[1];
 
-	get_reg(arg0, FRWARD_ARGS) =  mem_space->heap.read(get_reg(arg1, FRWARD_ARGS));
+	get_reg(arg0, FRWARD_ARGS) = mem_space->heap.read(get_reg(arg1, FRWARD_ARGS));
 }
-
 
 #define EXEC_ARITH_IN_PLACE_IMPL(macro, oper)                                                      \
 	void _N_EXEC_RAW::macro(REF_OPCODE_ARGS) {                                                     \
@@ -930,7 +917,6 @@ INSTR_OFFSET_IMPL(ALLOC_HEAP, 1)
 INSTR_OFFSET_IMPL(DEALLOC_HEAP, 1)
 INSTR_OFFSET_IMPL(WRITE_HEAP, 1)
 INSTR_OFFSET_IMPL(READ_HEAP, 1)
-
 
 INSTR_OFFSET_IMPL(FUNC_RET, 0)
 INSTR_OFFSET_IMPL(CALL, 0)
