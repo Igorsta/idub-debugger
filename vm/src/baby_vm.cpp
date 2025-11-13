@@ -43,18 +43,13 @@ using func_map = std::unordered_map<func_id_t, function_t>;
 		assert(false);                                                                             \
 	}
 
-#define EXEC(instr, mem_space, frame, program) instr->action(instr, mem_space, frame, program)
-
-#define CONST_OPCODE_ARGS                                                                          \
+#define CONST_RAW_EXEC_ARGS                                                                          \
 	[[maybe_unused]] const instrutction_t *instr, [[maybe_unused]] const memory_space *mem_space,  \
 		[[maybe_unused]] const frame_t *frame, [[maybe_unused]] const func_map *avail_funcs
-#define FRWARD_ARGS instr, mem_space, frame, avail_funcs
 
 #define EXEC_NEXT(step)                                                                            \
 	instr += step;                                                                                 \
-	MUST_TAIL return EXEC(instr, mem_space, frame, avail_funcs)
-
-#define EXEC_START(instr, mem_space, frame, program) EXEC(instr, mem_space, frame, program)
+	MUST_TAIL return EXEC(instr, mem_space, frame, exec_prog)
 
 #define _N_EXEC		  exec
 #define _N_EXEC_RAW	  _N_EXEC::raw
@@ -64,7 +59,8 @@ using func_map = std::unordered_map<func_id_t, function_t>;
 namespace _N_EXEC_FULL {
 #define FULL_EXEC_ARGS                                                                             \
 	[[maybe_unused]] const instrutction_t *&instr, [[maybe_unused]] memory_space *&mem_space,      \
-		[[maybe_unused]] frame_t *&frame, [[maybe_unused]] thread_t *avail_funcs
+		[[maybe_unused]] frame_t *&frame, [[maybe_unused]] thread_t *exec_prog
+#define FWD_FULL_ARGS instr, mem_space, frame, exec_prog
 
 using Fun = void(FULL_EXEC_ARGS);
 
@@ -74,10 +70,14 @@ namespace _N_EXEC_RAW {
 #define RAW_EXEC_ARGS                                                                              \
 	[[maybe_unused]] const instrutction_t *&instr, [[maybe_unused]] memory_space *&mem_space,      \
 		[[maybe_unused]] frame_t *&frame, [[maybe_unused]] func_map *avail_funcs
+#define FWD_RAW_ARGS instr, mem_space, frame, avail_funcs
 
 using RawFun = void(RAW_EXEC_ARGS);
 
 }; // namespace _N_EXEC_RAW
+
+#define EXEC(instr, mem_space, frame, program) instr->action(instr, mem_space, frame, program)
+#define EXEC_START(instr, mem_space, frame, program) EXEC(instr, mem_space, frame, program)
 
 #define _N_PARSE		parse
 #define _N_PARSE_OTHER	_N_PARSE::other
@@ -93,6 +93,11 @@ using parse_instr_t = void(PARSE_OPCODE_ARGS);
 }; // namespace _N_PARSE
 
 ///////////////////// IMPL ////////////////////////////
+
+enum class exec_mode {
+	NORMAL,
+	DEBUG,
+};
 
 struct flag_data {
 	bool were_equal = false;
@@ -110,7 +115,7 @@ struct frame_t {
 struct function_t {
 	code_block body;
 	uint64_t no_of_args;
-	std::vector<bit64> regs;
+	mutable std::vector<bit64> regs;
 };
 
 struct heap_t {
@@ -721,13 +726,13 @@ std::string read_file(std::string file_name) {
 
 //////////////////////////// OPCODE RAW ACTION IMPL ////////////////////////////
 
-INLINE static bit64 *last_on_stck(CONST_OPCODE_ARGS) {
+INLINE static bit64 *last_on_stck(CONST_RAW_EXEC_ARGS) {
 	CORE_ASSERT(frame->stack_start < frame->stack_head,
 				"Trying to access part of the stack what belongs to other function");
 	return (frame->stack_head - 1);
 }
 
-INLINE static bit64 &get_reg(bit64 arg0, RAW_EXEC_ARGS) {
+INLINE static bit64 &get_reg(bit64 arg0, CONST_RAW_EXEC_ARGS) {
 	auto cur_func = frame->cur_func_id;
 	auto &all_func = *avail_funcs;
 
@@ -752,31 +757,31 @@ void _N_EXEC_RAW::STCK_INIT(RAW_EXEC_ARGS) {
 	frame->stack_head++;
 }
 
-void _N_EXEC_RAW::STCK_DEINIT(RAW_EXEC_ARGS) { frame->stack_head = last_on_stck(FRWARD_ARGS); }
+void _N_EXEC_RAW::STCK_DEINIT(RAW_EXEC_ARGS) { frame->stack_head = last_on_stck(FWD_RAW_ARGS); }
 
 void _N_EXEC_RAW::REG_TO_STCK(RAW_EXEC_ARGS) {
 	auto arg0 = instr->arg[0];
 
-	*last_on_stck(FRWARD_ARGS) = get_reg(arg0, FRWARD_ARGS);
+	*last_on_stck(FWD_RAW_ARGS) = get_reg(arg0, FWD_RAW_ARGS);
 }
 
 void _N_EXEC_RAW::STCK_TO_REG(RAW_EXEC_ARGS) {
 	auto arg0 = instr->arg[0];
 
-	get_reg(arg0, FRWARD_ARGS) = *last_on_stck(FRWARD_ARGS);
+	get_reg(arg0, FWD_RAW_ARGS) = *last_on_stck(FWD_RAW_ARGS);
 }
 
 void _N_EXEC_RAW::REG_TO_REG(RAW_EXEC_ARGS) {
 	auto arg0 = instr->arg[0];
 	auto arg1 = instr->arg[1];
 
-	get_reg(arg1, FRWARD_ARGS) = get_reg(arg0, FRWARD_ARGS);
+	get_reg(arg1, FWD_RAW_ARGS) = get_reg(arg0, FWD_RAW_ARGS);
 }
 
 void _N_EXEC_RAW::REG_TO_RVAL(RAW_EXEC_ARGS) {
 	auto arg0 = instr->arg[0];
 
-	*frame->stack_start = get_reg(arg0, FRWARD_ARGS);
+	*frame->stack_start = get_reg(arg0, FWD_RAW_ARGS);
 }
 
 void _N_EXEC_RAW::INPUT_TO_REG(RAW_EXEC_ARGS) {
@@ -785,13 +790,13 @@ void _N_EXEC_RAW::INPUT_TO_REG(RAW_EXEC_ARGS) {
 	size_t val;
 	std::cin >> val;
 
-	get_reg(arg0, FRWARD_ARGS) = val;
+	get_reg(arg0, FWD_RAW_ARGS) = val;
 }
 
 void _N_EXEC_RAW::OUTPUT_REG(RAW_EXEC_ARGS) {
 	auto arg0 = instr->arg[0];
 
-	std::cout << get_reg(arg0, FRWARD_ARGS) << std::endl;
+	std::cout << get_reg(arg0, FWD_RAW_ARGS) << std::endl;
 }
 
 void _N_EXEC_RAW::CALL(RAW_EXEC_ARGS) {
@@ -843,8 +848,8 @@ void _N_EXEC_RAW::CMP_REG(RAW_EXEC_ARGS) {
 	auto &arg0 = instr->arg[0];
 	auto &arg1 = instr->arg[1];
 
-	const auto &reg0 = get_reg(arg0, FRWARD_ARGS);
-	const auto &reg1 = get_reg(arg1, FRWARD_ARGS);
+	const auto &reg0 = get_reg(arg0, FWD_RAW_ARGS);
+	const auto &reg1 = get_reg(arg1, FWD_RAW_ARGS);
 
 	frame->flags.were_equal = (reg0 == reg1);
 	frame->flags.first_was_bigger = (reg0 > reg1);
@@ -862,41 +867,41 @@ void _N_EXEC_RAW::INIT_IMM(RAW_EXEC_ARGS) {
 	auto arg0 = instr->arg[0];
 	auto arg1 = instr->arg[1];
 
-	get_reg(arg1, FRWARD_ARGS) = arg1;
+	get_reg(arg1, FWD_RAW_ARGS) = arg1;
 }
 
 void _N_EXEC_RAW::ALLOC_HEAP(RAW_EXEC_ARGS) {
 	auto arg0 = instr->arg[0];
 	auto arg1 = instr->arg[1];
 
-	get_reg(arg0, FRWARD_ARGS) = mem_space->heap.allocate(get_reg(arg1, FRWARD_ARGS));
+	get_reg(arg0, FWD_RAW_ARGS) = mem_space->heap.allocate(get_reg(arg1, FWD_RAW_ARGS));
 }
 
 void _N_EXEC_RAW::DEALLOC_HEAP(RAW_EXEC_ARGS) {
 	auto arg0 = instr->arg[0];
 
-	mem_space->heap.deallocate(get_reg(arg0, FRWARD_ARGS));
+	mem_space->heap.deallocate(get_reg(arg0, FWD_RAW_ARGS));
 }
 
 void _N_EXEC_RAW::WRITE_HEAP(RAW_EXEC_ARGS) {
 	auto arg0 = instr->arg[0];
 	auto arg1 = instr->arg[1];
 
-	mem_space->heap.write(get_reg(arg0, FRWARD_ARGS), get_reg(arg1, FRWARD_ARGS));
+	mem_space->heap.write(get_reg(arg0, FWD_RAW_ARGS), get_reg(arg1, FWD_RAW_ARGS));
 }
 
 void _N_EXEC_RAW::READ_HEAP(RAW_EXEC_ARGS) {
 	auto arg0 = instr->arg[0];
 	auto arg1 = instr->arg[1];
 
-	get_reg(arg0, FRWARD_ARGS) = mem_space->heap.read(get_reg(arg1, FRWARD_ARGS));
+	get_reg(arg0, FWD_RAW_ARGS) = mem_space->heap.read(get_reg(arg1, FWD_RAW_ARGS));
 }
 
 #define EXEC_ARITH_IN_PLACE_IMPL(macro, oper)                                                      \
 	void _N_EXEC_RAW::macro(RAW_EXEC_ARGS) {                                                       \
 		auto arg0 = instr->arg[0];                                                                 \
 		auto arg1 = instr->arg[1];                                                                 \
-		get_reg(arg0, FRWARD_ARGS) oper get_reg(arg1, FRWARD_ARGS);                                \
+		get_reg(arg0, FWD_RAW_ARGS) oper get_reg(arg1, FWD_RAW_ARGS);                                \
 	}
 
 EXEC_ARITH_IN_PLACE_IMPL(ADD_IN_PLACE, +=)
@@ -909,7 +914,7 @@ EXEC_ARITH_IN_PLACE_IMPL(MOD_IN_PLACE, %=)
 
 #define INSTR_OFFSET_IMPL(macro, offset)                                                           \
 	namespace _N_EXEC_UTILS::next_instr_offset {                                                   \
-	constexpr size_t macro() { return offset; }                                                    \
+	constexpr size_t macro(FULL_EXEC_ARGS) { return offset; }                                      \
 	}
 
 INSTR_OFFSET_IMPL(STCK_INIT, 1)
@@ -939,13 +944,13 @@ INSTR_OFFSET_IMPL(JUMP_EQ, 0)
 
 //////////////////////////// OPCODE FULL EXEC IMPL ////////////////////////////
 
-#define FULL_TO_RAW_ARGS instr, mem_space, frame, &avail_funcs->get_funcs()
+#define FULL_TO_RAW_ARGS instr, mem_space, frame, &exec_prog->get_funcs()
 
 #define EXEC_FULL_IMPL(macro)                                                                      \
 	void _N_EXEC_FULL::macro(FULL_EXEC_ARGS) {                                                     \
-		_N_EXEC_RAW::macro(FULL_TO_RAW_ARGS);                                               \
+		_N_EXEC_RAW::macro(FULL_TO_RAW_ARGS);                                                      \
                                                                                                    \
-		EXEC_NEXT(_N_EXEC_UTILS::next_instr_offset::macro());                                      \
+		EXEC_NEXT(_N_EXEC_UTILS::next_instr_offset::macro(FWD_FULL_ARGS));                                      \
 	}
 
 EXEC_FULL_IMPL(STCK_INIT)
