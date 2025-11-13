@@ -18,62 +18,7 @@ struct function_t;
 struct flag_data;
 enum class operand_t;
 
-///////////////////// EXEC MACRO ////////////////////////////
-
-#define CORE_ASSERT(cond, ...)                                                                     \
-	if (!(cond)) {                                                                                 \
-		std::print(__VA_ARGS__);                                                                   \
-		assert(false);                                                                             \
-	}
-
-#define EXEC(instr, mem_space, frame, program) instr->action(instr, mem_space, frame, program)
-
-#define CONST_OPCODE_ARGS                                                                          \
-	[[maybe_unused]] const instrutction_t *instr, [[maybe_unused]] const memory_space *mem_space,  \
-		[[maybe_unused]] const frame_t *frame, [[maybe_unused]] const thread_t *exec_program
-#define FRWARD_ARGS instr, mem_space, frame, exec_program
-
-#define EXEC_NEXT(step)                                                                            \
-	instr += step;                                                                                 \
-	MUST_TAIL return EXEC(instr, mem_space, frame, exec_program)
-
-#define EXEC_START(instr, mem_space, frame, program) EXEC(instr, mem_space, frame, program)
-
-#define _N_EXEC exec
-#define _N_EXEC_RAW _N_EXEC::raw
-#define _N_EXEC_FULL _N_EXEC::full
-#define _N_EXEC_UTILS _N_EXEC::utils
-
-namespace _N_EXEC_FULL {
-#define OPCODE_ARGS                                                                                \
-	[[maybe_unused]] const instrutction_t *&instr, [[maybe_unused]] memory_space *&mem_space,      \
-		[[maybe_unused]] frame_t *&frame, [[maybe_unused]] thread_t *exec_program
-
-using Fun = void(OPCODE_ARGS);
-
-}; // namespace _N_EXEC_FULL
-
-namespace _N_EXEC_RAW {
-#define REF_OPCODE_ARGS                                                                            \
-	[[maybe_unused]] const instrutction_t *&instr, [[maybe_unused]] memory_space *&mem_space,      \
-		[[maybe_unused]] frame_t *&frame, [[maybe_unused]] thread_t *exec_program
-
-using RawFun = void(REF_OPCODE_ARGS);
-
-}; // namespace _N_EXEC_RAW
-
-#define _N_PARSE parse
-#define _N_PARSE_OTHER _N_PARSE::other
-#define _N_PARSE_SIMPLE _N_PARSE::simple
-#define _N_PARSE_JUMPS _N_PARSE::jumps
-#define _N_PARSE_UTILS _N_PARSE::utils
-
-namespace _N_PARSE {
-#define PARSE_OPCODE_ARGS                                                                          \
-	[[maybe_unused]] thread_builder_t &builder, [[maybe_unused]] const std::smatch &matches
-
-using parse_instr_t = void(PARSE_OPCODE_ARGS);
-}; // namespace _N_PARSE
+///////////////////// USINGS ////////////////////////////
 
 using bit64 = uint64_t;
 using code_block = std::vector<instrutction_t>;
@@ -89,6 +34,63 @@ using labl_map = std::unordered_map<func_id_t, size_t>;
 
 using func_id_map = std::unordered_map<std::string, func_id_t>;
 using func_map = std::unordered_map<func_id_t, function_t>;
+
+///////////////////// EXEC MACRO ////////////////////////////
+
+#define CORE_ASSERT(cond, ...)                                                                     \
+	if (!(cond)) {                                                                                 \
+		std::print(__VA_ARGS__);                                                                   \
+		assert(false);                                                                             \
+	}
+
+#define EXEC(instr, mem_space, frame, program) instr->action(instr, mem_space, frame, program)
+
+#define CONST_OPCODE_ARGS                                                                          \
+	[[maybe_unused]] const instrutction_t *instr, [[maybe_unused]] const memory_space *mem_space,  \
+		[[maybe_unused]] const frame_t *frame, [[maybe_unused]] const func_map *avail_funcs
+#define FRWARD_ARGS instr, mem_space, frame, avail_funcs
+
+#define EXEC_NEXT(step)                                                                            \
+	instr += step;                                                                                 \
+	MUST_TAIL return EXEC(instr, mem_space, frame, avail_funcs)
+
+#define EXEC_START(instr, mem_space, frame, program) EXEC(instr, mem_space, frame, program)
+
+#define _N_EXEC		  exec
+#define _N_EXEC_RAW	  _N_EXEC::raw
+#define _N_EXEC_FULL  _N_EXEC::full
+#define _N_EXEC_UTILS _N_EXEC::utils
+
+namespace _N_EXEC_FULL {
+#define FULL_EXEC_ARGS                                                                             \
+	[[maybe_unused]] const instrutction_t *&instr, [[maybe_unused]] memory_space *&mem_space,      \
+		[[maybe_unused]] frame_t *&frame, [[maybe_unused]] thread_t *avail_funcs
+
+using Fun = void(FULL_EXEC_ARGS);
+
+}; // namespace _N_EXEC_FULL
+
+namespace _N_EXEC_RAW {
+#define RAW_EXEC_ARGS                                                                              \
+	[[maybe_unused]] const instrutction_t *&instr, [[maybe_unused]] memory_space *&mem_space,      \
+		[[maybe_unused]] frame_t *&frame, [[maybe_unused]] func_map *avail_funcs
+
+using RawFun = void(RAW_EXEC_ARGS);
+
+}; // namespace _N_EXEC_RAW
+
+#define _N_PARSE		parse
+#define _N_PARSE_OTHER	_N_PARSE::other
+#define _N_PARSE_SIMPLE _N_PARSE::simple
+#define _N_PARSE_JUMPS	_N_PARSE::jumps
+#define _N_PARSE_UTILS	_N_PARSE::utils
+
+namespace _N_PARSE {
+#define PARSE_OPCODE_ARGS                                                                          \
+	[[maybe_unused]] thread_builder_t &builder, [[maybe_unused]] const std::smatch &matches
+
+using parse_instr_t = void(PARSE_OPCODE_ARGS);
+}; // namespace _N_PARSE
 
 ///////////////////// IMPL ////////////////////////////
 
@@ -209,6 +211,8 @@ struct thread_t {
 
 		EXEC_START(instr, mem, frame, this);
 	}
+
+	func_map &get_funcs() { return functions; }
 };
 
 struct thread_builder_t {
@@ -237,12 +241,14 @@ public:
 	}
 
 	void define_reg(const std::string &name) {
-		CORE_ASSERT(reg_decl.emplace(name, reg_decl.size()).second, "The register {} has been defined two times", name);
+		CORE_ASSERT(reg_decl.emplace(name, reg_decl.size()).second,
+					"The register {} has been defined two times", name);
 	}
 
 	void commit_func(const std::string &name, uint64_t no_of_args) {
 		for (const auto &[name, id] : labl_decl) {
-			CORE_ASSERT(label_pos.find(id) != label_pos.end(), "label {} was refered but not defined", name);
+			CORE_ASSERT(label_pos.find(id) != label_pos.end(),
+						"label {} was refered but not defined", name);
 		}
 		while (jump_ops.size()) {
 			int curr_pos = jump_ops.back();
@@ -292,44 +298,45 @@ public:
 
 	void validate_prog() {
 		for (auto &[_, id] : func_decl) {
-			CORE_ASSERT(functions_impl.find(id) != functions_impl.end(), "function {} does not have implementation", _);
+			CORE_ASSERT(functions_impl.find(id) != functions_impl.end(),
+						"function {} does not have implementation", _);
 		}
 	}
 };
 
 ///////////////////// OPCODE_MACROS ////////////////////////////
-#define STCK_INIT init
-#define STCK_DEINIT deinit
-#define REG_TO_STCK reg_to_stack
-#define STCK_TO_REG stack_to_reg
-#define REG_TO_RVAL reg_to_retval
-#define REG_TO_REG reg_to_reg
+#define STCK_INIT	 init
+#define STCK_DEINIT	 deinit
+#define REG_TO_STCK	 reg_to_stack
+#define STCK_TO_REG	 stack_to_reg
+#define REG_TO_RVAL	 reg_to_retval
+#define REG_TO_REG	 reg_to_reg
 #define INPUT_TO_REG input_reg
-#define OUTPUT_REG output_reg
-#define FUNC_RET func_return
-#define EXIT_PROG exit_prog
-#define CALL call_func
-#define LABEL label
-#define JUMP jump_to
-#define JUMP_EQ jump_if_eq
-#define CMP_REG cmp_reg
-#define DEMAND_REG demand_reg
-#define INIT_IMM init_imm
+#define OUTPUT_REG	 output_reg
+#define FUNC_RET	 func_return
+#define EXIT_PROG	 exit_prog
+#define CALL		 call_func
+#define LABEL		 label
+#define JUMP		 jump_to
+#define JUMP_EQ		 jump_if_eq
+#define CMP_REG		 cmp_reg
+#define DEMAND_REG	 demand_reg
+#define INIT_IMM	 init_imm
 #define ADD_IN_PLACE add_in_place
 #define MUL_IN_PLACE mul_in_place
 #define SUB_IN_PLACE sub_in_place
 #define MOD_IN_PLACE mod_in_place
 #define DIV_IN_PLACE div_in_place
-#define ALLOC_HEAP alloc_heap
+#define ALLOC_HEAP	 alloc_heap
 #define DEALLOC_HEAP dealloc_heap
-#define READ_HEAP read_heap
-#define WRITE_HEAP write_heap
+#define READ_HEAP	 read_heap
+#define WRITE_HEAP	 write_heap
 
-#define _N_ARGS args
+#define _N_ARGS		  args
 #define _N_ARGS_UTILS _N_ARGS::utils
 
 #define STRINGIFY(x) #x
-#define nameof(x) STRINGIFY(x)
+#define nameof(x)	 STRINGIFY(x)
 
 #define REQUIRED_FOR_EXEC(macro)                                                                   \
 	namespace _N_EXEC_RAW {                                                                        \
@@ -715,16 +722,19 @@ std::string read_file(std::string file_name) {
 //////////////////////////// OPCODE RAW ACTION IMPL ////////////////////////////
 
 INLINE static bit64 *last_on_stck(CONST_OPCODE_ARGS) {
-	CORE_ASSERT(frame->stack_start < frame->stack_head, "Trying to access part of the stack what belongs to other function");
+	CORE_ASSERT(frame->stack_start < frame->stack_head,
+				"Trying to access part of the stack what belongs to other function");
 	return (frame->stack_head - 1);
 }
 
-INLINE static bit64 &get_reg(bit64 arg0, REF_OPCODE_ARGS) {
+INLINE static bit64 &get_reg(bit64 arg0, RAW_EXEC_ARGS) {
 	auto cur_func = frame->cur_func_id;
-	auto &all_func = exec_program->functions;
+	auto &all_func = *avail_funcs;
 
 	auto it = all_func.find(cur_func);
-	CORE_ASSERT(it != all_func.end(), "Weird, currently executed function (id: {}) is not among the functions of thread", cur_func);
+	CORE_ASSERT(it != all_func.end(),
+				"Weird, currently executed function (id: {}) is not among the functions of thread",
+				cur_func);
 
 	auto &function = it->second;
 	CORE_ASSERT(
@@ -735,41 +745,41 @@ INLINE static bit64 &get_reg(bit64 arg0, REF_OPCODE_ARGS) {
 	return function.regs[arg0];
 }
 
-void _N_EXEC_RAW::STCK_INIT(REF_OPCODE_ARGS) {
+void _N_EXEC_RAW::STCK_INIT(RAW_EXEC_ARGS) {
 	auto end = mem_space->MEM_STACK.get() + mem_space->MEM_STACK_SIZE;
 	CORE_ASSERT(frame->stack_head + 1 < end, "Stack overflow");
 
 	frame->stack_head++;
 }
 
-void _N_EXEC_RAW::STCK_DEINIT(REF_OPCODE_ARGS) { frame->stack_head = last_on_stck(FRWARD_ARGS); }
+void _N_EXEC_RAW::STCK_DEINIT(RAW_EXEC_ARGS) { frame->stack_head = last_on_stck(FRWARD_ARGS); }
 
-void _N_EXEC_RAW::REG_TO_STCK(REF_OPCODE_ARGS) {
+void _N_EXEC_RAW::REG_TO_STCK(RAW_EXEC_ARGS) {
 	auto arg0 = instr->arg[0];
 
 	*last_on_stck(FRWARD_ARGS) = get_reg(arg0, FRWARD_ARGS);
 }
 
-void _N_EXEC_RAW::STCK_TO_REG(REF_OPCODE_ARGS) {
+void _N_EXEC_RAW::STCK_TO_REG(RAW_EXEC_ARGS) {
 	auto arg0 = instr->arg[0];
 
 	get_reg(arg0, FRWARD_ARGS) = *last_on_stck(FRWARD_ARGS);
 }
 
-void _N_EXEC_RAW::REG_TO_REG(REF_OPCODE_ARGS) {
+void _N_EXEC_RAW::REG_TO_REG(RAW_EXEC_ARGS) {
 	auto arg0 = instr->arg[0];
 	auto arg1 = instr->arg[1];
 
 	get_reg(arg1, FRWARD_ARGS) = get_reg(arg0, FRWARD_ARGS);
 }
 
-void _N_EXEC_RAW::REG_TO_RVAL(REF_OPCODE_ARGS) {
+void _N_EXEC_RAW::REG_TO_RVAL(RAW_EXEC_ARGS) {
 	auto arg0 = instr->arg[0];
 
 	*frame->stack_start = get_reg(arg0, FRWARD_ARGS);
 }
 
-void _N_EXEC_RAW::INPUT_TO_REG(REF_OPCODE_ARGS) {
+void _N_EXEC_RAW::INPUT_TO_REG(RAW_EXEC_ARGS) {
 	auto arg0 = instr->arg[0];
 
 	size_t val;
@@ -778,16 +788,16 @@ void _N_EXEC_RAW::INPUT_TO_REG(REF_OPCODE_ARGS) {
 	get_reg(arg0, FRWARD_ARGS) = val;
 }
 
-void _N_EXEC_RAW::OUTPUT_REG(REF_OPCODE_ARGS) {
+void _N_EXEC_RAW::OUTPUT_REG(RAW_EXEC_ARGS) {
 	auto arg0 = instr->arg[0];
 
 	std::cout << get_reg(arg0, FRWARD_ARGS) << std::endl;
 }
 
-void _N_EXEC_RAW::CALL(REF_OPCODE_ARGS) {
+void _N_EXEC_RAW::CALL(RAW_EXEC_ARGS) {
 	auto arg0 = instr->arg[0];
-	auto it = exec_program->functions.find(arg0);
-	CORE_ASSERT(it != exec_program->functions.end(), "Call to undeclared function");
+	auto it = avail_funcs->find(arg0);
+	CORE_ASSERT(it != avail_funcs->end(), "Call to undeclared function");
 
 	frame->instr = instr + 1;
 
@@ -801,31 +811,35 @@ void _N_EXEC_RAW::CALL(REF_OPCODE_ARGS) {
 	auto &[_, func_code] = *it;
 
 	auto shared_memory = 1 + func_code.no_of_args;
-	CORE_ASSERT(frame->stack_start + shared_memory <= frame->stack_head, "I guess check number of elements on stack?");	//@todo: WTH is going on here?
+	CORE_ASSERT(frame->stack_start + shared_memory <= frame->stack_head,
+				"I guess check number of elements on stack?"); //@todo: WTH is going on here?
 	frame->stack_start = frame->stack_head - shared_memory;
 
 	instr = func_code.body.data();
 }
 
-void _N_EXEC_RAW::FUNC_RET(REF_OPCODE_ARGS) {
+void _N_EXEC_RAW::FUNC_RET(RAW_EXEC_ARGS) {
 	auto end = mem_space->MEM_STACK.get() + mem_space->MEM_STACK_SIZE;
-	CORE_ASSERT(frame->stack_start + 1 < end, "Data stackoverflow: couldn't acquire memory to return result from function");
+	CORE_ASSERT(frame->stack_start + 1 < end,
+				"Data stackoverflow: couldn't acquire memory to return result from function");
 
 	frame->stack_head = frame->stack_start + 1;
 	frame--;
 	instr = frame->instr;
 }
 
-void _N_EXEC_RAW::EXIT_PROG(REF_OPCODE_ARGS) {
-	CORE_ASSERT(frame->stack_head == mem_space->MEM_STACK.get() + 1, "When exiting program, only one element should be on memory stack");
-	CORE_ASSERT(frame == mem_space->CALL_STACK.get(), "You cannot exit prgram from other function than main (yet)");
+void _N_EXEC_RAW::EXIT_PROG(RAW_EXEC_ARGS) {
+	CORE_ASSERT(frame->stack_head == mem_space->MEM_STACK.get() + 1,
+				"When exiting program, only one element should be on memory stack");
+	CORE_ASSERT(frame == mem_space->CALL_STACK.get(),
+				"You cannot exit prgram from other function than main (yet)");
 
 	std::cout << std::format("program exited with {}\n", *mem_space->MEM_STACK.get());
 }
 
-void _N_EXEC_RAW::JUMP(REF_OPCODE_ARGS) { instr += instr->arg[0]; }
+void _N_EXEC_RAW::JUMP(RAW_EXEC_ARGS) { instr += instr->arg[0]; }
 
-void _N_EXEC_RAW::CMP_REG(REF_OPCODE_ARGS) {
+void _N_EXEC_RAW::CMP_REG(RAW_EXEC_ARGS) {
 	auto &arg0 = instr->arg[0];
 	auto &arg1 = instr->arg[1];
 
@@ -836,7 +850,7 @@ void _N_EXEC_RAW::CMP_REG(REF_OPCODE_ARGS) {
 	frame->flags.first_was_bigger = (reg0 > reg1);
 }
 
-void _N_EXEC_RAW::JUMP_EQ(REF_OPCODE_ARGS) {
+void _N_EXEC_RAW::JUMP_EQ(RAW_EXEC_ARGS) {
 	if (frame->flags.were_equal) {
 		instr += instr->arg[0];
 	} else {
@@ -844,34 +858,34 @@ void _N_EXEC_RAW::JUMP_EQ(REF_OPCODE_ARGS) {
 	}
 }
 
-void _N_EXEC_RAW::INIT_IMM(REF_OPCODE_ARGS) {
+void _N_EXEC_RAW::INIT_IMM(RAW_EXEC_ARGS) {
 	auto arg0 = instr->arg[0];
 	auto arg1 = instr->arg[1];
 
 	get_reg(arg1, FRWARD_ARGS) = arg1;
 }
 
-void _N_EXEC_RAW::ALLOC_HEAP(REF_OPCODE_ARGS) {
+void _N_EXEC_RAW::ALLOC_HEAP(RAW_EXEC_ARGS) {
 	auto arg0 = instr->arg[0];
 	auto arg1 = instr->arg[1];
 
 	get_reg(arg0, FRWARD_ARGS) = mem_space->heap.allocate(get_reg(arg1, FRWARD_ARGS));
 }
 
-void _N_EXEC_RAW::DEALLOC_HEAP(REF_OPCODE_ARGS) {
+void _N_EXEC_RAW::DEALLOC_HEAP(RAW_EXEC_ARGS) {
 	auto arg0 = instr->arg[0];
 
 	mem_space->heap.deallocate(get_reg(arg0, FRWARD_ARGS));
 }
 
-void _N_EXEC_RAW::WRITE_HEAP(REF_OPCODE_ARGS) {
+void _N_EXEC_RAW::WRITE_HEAP(RAW_EXEC_ARGS) {
 	auto arg0 = instr->arg[0];
 	auto arg1 = instr->arg[1];
 
 	mem_space->heap.write(get_reg(arg0, FRWARD_ARGS), get_reg(arg1, FRWARD_ARGS));
 }
 
-void _N_EXEC_RAW::READ_HEAP(REF_OPCODE_ARGS) {
+void _N_EXEC_RAW::READ_HEAP(RAW_EXEC_ARGS) {
 	auto arg0 = instr->arg[0];
 	auto arg1 = instr->arg[1];
 
@@ -879,7 +893,7 @@ void _N_EXEC_RAW::READ_HEAP(REF_OPCODE_ARGS) {
 }
 
 #define EXEC_ARITH_IN_PLACE_IMPL(macro, oper)                                                      \
-	void _N_EXEC_RAW::macro(REF_OPCODE_ARGS) {                                                     \
+	void _N_EXEC_RAW::macro(RAW_EXEC_ARGS) {                                                       \
 		auto arg0 = instr->arg[0];                                                                 \
 		auto arg1 = instr->arg[1];                                                                 \
 		get_reg(arg0, FRWARD_ARGS) oper get_reg(arg1, FRWARD_ARGS);                                \
@@ -925,9 +939,11 @@ INSTR_OFFSET_IMPL(JUMP_EQ, 0)
 
 //////////////////////////// OPCODE FULL EXEC IMPL ////////////////////////////
 
+#define FULL_TO_RAW_ARGS instr, mem_space, frame, &avail_funcs->get_funcs()
+
 #define EXEC_FULL_IMPL(macro)                                                                      \
-	void _N_EXEC_FULL::macro(OPCODE_ARGS) {                                                        \
-		_N_EXEC_RAW::macro(FRWARD_ARGS);                                                           \
+	void _N_EXEC_FULL::macro(FULL_EXEC_ARGS) {                                                     \
+		_N_EXEC_RAW::macro(FULL_TO_RAW_ARGS);                                               \
                                                                                                    \
 		EXEC_NEXT(_N_EXEC_UTILS::next_instr_offset::macro());                                      \
 	}
@@ -956,8 +972,8 @@ EXEC_FULL_IMPL(DEALLOC_HEAP)
 EXEC_FULL_IMPL(WRITE_HEAP)
 EXEC_FULL_IMPL(READ_HEAP)
 
-void _N_EXEC_FULL::EXIT_PROG(OPCODE_ARGS) {
-	_N_EXEC_RAW::EXIT_PROG(FRWARD_ARGS);
+void _N_EXEC_FULL::EXIT_PROG(FULL_EXEC_ARGS) {
+	_N_EXEC_RAW::EXIT_PROG(FULL_TO_RAW_ARGS);
 
 	return;
 }

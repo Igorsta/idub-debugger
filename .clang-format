@@ -17,3 +17,6 @@ AlignAfterOpenBracket: Align
 AllowAllConstructorInitializersOnNextLine: false
 
 IndentPPDirectives: BeforeHash
+
+AlignConsecutiveMacros:
+  Enabled: true
