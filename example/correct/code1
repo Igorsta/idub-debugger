@@ -1,4 +1,4 @@
-fun main(0): {
+fun main(0) -> 1: {
 	demand_reg $0
 	demand_reg $1
 	input_reg $0
@@ -12,7 +12,7 @@ fun main(0): {
 	exit_prog
 }
 
-fun test(0): {
+fun test(1) -> 1: {
 	demand_reg $2
 	demand_reg $3
 	demand_reg $4

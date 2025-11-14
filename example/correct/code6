@@ -1,4 +1,4 @@
-fun main(0): {
+fun main(0) -> 1 : {
 	# REGISTER DECLARATION
 	demand_reg $0
 	demand_reg $1
@@ -26,7 +26,7 @@ fun main(0): {
 	exit_prog
 }
 
-fun test(0): {
+fun test(1) -> 1: {
 	demand_reg $0
 	demand_reg $1
 	demand_reg $2

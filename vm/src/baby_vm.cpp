@@ -194,6 +194,7 @@ struct frame_t {
 struct function_t {
 	code_block body;
 	uint64_t no_of_args;
+	uint64_t res_size;
 	mutable std::vector<bit64> regs;
 };
 
@@ -344,7 +345,7 @@ public:
 					"The register {} has been defined two times", name);
 	}
 
-	void commit_func(const std::string &name, uint64_t no_of_args) {
+	void commit_func(const std::string &name, uint64_t no_of_args, uint64_t size_of_result) {
 		for (const auto &[name, id] : labl_decl) {
 			CORE_ASSERT(label_pos.find(id) != label_pos.end(),
 						"label {} was refered but not defined", name);
@@ -360,6 +361,7 @@ public:
 		functions_impl.emplace(refer_func(name), function_t{
 													 .body = built_func_body,
 													 .no_of_args = no_of_args,
+													 .res_size = size_of_result,
 													 .regs = std::vector<bit64>(reg_decl.size()),
 												 });
 
@@ -433,8 +435,10 @@ constexpr std::string regex_arg_t(const operand_t &arg) {
 };
 
 constexpr std::string regex_func() {
-	return "\\s*fun\\s+" + regex_arg_t(operand_t::FUNC_NAME) + "\\s*\\(\\s*" +
-		   regex_arg_t(operand_t::DECIMAL_NUM) + "\\s*\\)\\s*:" + "\\s*\\{([^}]*)\\}";
+	return "\\s*fun\\s+" + regex_arg_t(operand_t::FUNC_NAME) +
+		   "\\s*\\(\\s*" + regex_arg_t(operand_t::DECIMAL_NUM) + "\\s*\\)" +
+		   "\\s*->\\s*" + regex_arg_t(operand_t::DECIMAL_NUM) + "\\s*:\\s*" + 
+		   "\\s*\\{([^}]*)\\}";
 }
 
 namespace _N_PARSE_UTILS {
@@ -691,12 +695,12 @@ thread_t<MODE> file_parse(std::string &content) {
 	for (auto it = func_begin; it != func_end; it++) {
 		const std::smatch &matches = *it;
 
-		std::stringstream code(matches[3]);
+		std::stringstream code(matches[4]);
 		static std::string line;
 		while (getline(code, line)) {
 			parse_line(line, res);
 		}
-		res.commit_func(matches[1], stoull(matches[2]));
+		res.commit_func(matches[1], stoull(matches[2]), stoull(matches[3]));
 	}
 
 	res.validate_prog();
@@ -713,9 +717,8 @@ std::string read_file(std::string file_name) {
 	std::regex code_of_functions("(" + regex_func() + ")*\\s*");
 	std::smatch matches;
 
-	if (!std::regex_match(content, code_of_functions)) {
-		throw std::logic_error("Code of wrong format");
-	}
+	bool matched = std::regex_match(content, code_of_functions);
+	CORE_ASSERT(matched, "Code of wrong format");
 
 	return content;
 }
@@ -821,31 +824,34 @@ _N_EXEC_RAW::ret_t _N_EXEC_RAW::CALL(RAW_EXEC_ARGS) {
 	frame->instr = instr + 1;
 
 	auto prev_frame = frame;
-	auto end = mem_space->CALL_STACK.get() + mem_space->CALL_STACK_SIZE;
-	CORE_ASSERT(frame + 1 < end, "Call stack overflow");
+	auto frame_end = mem_space->CALL_STACK.get() + mem_space->CALL_STACK_SIZE;
+	CORE_ASSERT(frame + 1 < frame_end, "Call stack overflow");
 	frame++;
 
 	frame->stack_head = prev_frame->stack_head;
 
-	auto &[_, func_code] = *it;
+	auto &[_, callee] = *it;
 
-	auto shared_memory = 1 + func_code.no_of_args;
-	CORE_ASSERT(frame->stack_start + shared_memory <= frame->stack_head,
+	auto shared_memory = callee.no_of_args;
+	CORE_ASSERT(prev_frame->stack_start + shared_memory <= prev_frame->stack_head,
 				"I guess check number of elements on stack?"); //@todo: WTH is going on here?
 	frame->stack_start = frame->stack_head - shared_memory;
 
-	instr = func_code.body.data();
+	instr = callee.body.data();
 
 	return 0;
 }
 
 _N_EXEC_RAW::ret_t _N_EXEC_RAW::FUNC_RET(RAW_EXEC_ARGS) {
 	auto end = mem_space->MEM_STACK.get() + mem_space->MEM_STACK_SIZE;
-	CORE_ASSERT(frame->stack_start + 1 < end,
-				"Data stackoverflow: couldn't acquire memory to return result from function");
+	auto &func = (*avail_funcs)[frame->cur_func_id];
 
-	frame->stack_head = frame->stack_start + 1;
+	auto expected_head = frame->stack_start + func.res_size;
+	CORE_ASSERT(expected_head == frame->stack_head,
+				"Function returned wrong number of elements on a stack");
+
 	frame--;
+	frame->stack_head = expected_head;
 	instr = frame->instr;
 
 	return 0;

@@ -1,4 +1,4 @@
-fun main(0): {
+fun main(0) -> 1: {
 	demand_reg $0
 	demand_reg $1
 	demand_reg $2
