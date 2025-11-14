@@ -9,10 +9,18 @@
 
 ///////////////////// DECLARATIONS ////////////////////////////
 
+enum class exec_mode {
+	NORMAL,
+	DEBUG,
+};
+
 struct instrutction_t;
 struct frame_t;
 struct memory_space;
+
+template <exec_mode mode = exec_mode::NORMAL>
 struct thread_t;
+
 struct thread_builder_t;
 struct function_t;
 struct flag_data;
@@ -47,10 +55,6 @@ using func_map = std::unordered_map<func_id_t, function_t>;
 	[[maybe_unused]] const instrutction_t *instr, [[maybe_unused]] const memory_space *mem_space,  \
 		[[maybe_unused]] const frame_t *frame, [[maybe_unused]] const func_map *avail_funcs
 
-#define EXEC_NEXT(step)                                                                            \
-	instr += step;                                                                                 \
-	MUST_TAIL return EXEC(instr, mem_space, frame, exec_prog)
-
 #define _N_EXEC		  exec
 #define _N_EXEC_RAW	  _N_EXEC::raw
 #define _N_EXEC_UTILS _N_EXEC::utils
@@ -64,9 +68,6 @@ using ret_t = std::optional<bit64>;
 using func_t = ret_t(RAW_EXEC_ARGS);
 
 }; // namespace _N_EXEC_RAW
-
-#define EXEC(instr, mem_space, frame, program)		 instr->action(instr, mem_space, frame, program)
-#define EXEC_START(instr, mem_space, frame, program) EXEC(instr, mem_space, frame, program)
 
 #define _N_PARSE		parse
 #define _N_PARSE_OTHER	_N_PARSE::other
@@ -177,11 +178,6 @@ REQUIRED_FOR_JUMPS(JUMP_EQ)
 
 ///////////////////// IMPL ////////////////////////////
 
-enum class exec_mode {
-	NORMAL,
-	DEBUG,
-};
-
 struct flag_data {
 	bool were_equal = false;
 	bool first_was_bigger = false;
@@ -283,6 +279,7 @@ struct instrutction_t {
 	bit64 arg[args_per_instr];
 };
 
+template <exec_mode mode>
 struct thread_t {
 	func_map functions;
 	func_id_map func_id;
@@ -372,7 +369,8 @@ public:
 		labl_decl.clear();
 	};
 
-	thread_t make_thread() {
+	template <exec_mode MODE>
+	thread_t<MODE> make_thread() {
 		CORE_ASSERT(built_func_body.empty() && reg_decl.empty() && label_pos.empty() &&
 						labl_decl.empty() && jump_ops.empty(),
 					"Trying to make a thread without having a full-built func");
@@ -683,7 +681,8 @@ void parse_line(const std::string &line, thread_builder_t &builder) {
 	CORE_ASSERT(false, "Line \"{}\" could not be parsed", line);
 }
 
-thread_t file_parse(std::string &content) {
+template <exec_mode MODE>
+thread_t<MODE> file_parse(std::string &content) {
 	thread_builder_t res{};
 
 	static const std::regex func_re(regex_func());
@@ -702,7 +701,7 @@ thread_t file_parse(std::string &content) {
 
 	res.validate_prog();
 
-	return res.make_thread();
+	return res.make_thread<MODE>();
 }
 
 } // namespace _N_PARSE_UTILS
@@ -943,14 +942,21 @@ EXEC_ARITH_IN_PLACE_IMPL(MOD_IN_PLACE, %=)
 //////////////////////////// OPCODE NORMAL VERSION ////////////////////////////
 
 int main(int argc, const char *argv[]) {
-	CORE_ASSERT(argc == 2, "the usage: {} <file name>", argv[0]);
+	CORE_ASSERT(argc == 3, "the usage: {} [run|debug] <file name>", argv[0]);
 
-	std::string file = argv[1];
+	std::string mode = argv[1];
+	std::string file = argv[2];
 	std::string file_content = read_file(file);
 
-	thread_t program = _N_PARSE_UTILS::file_parse(file_content);
+	CORE_ASSERT(mode == "run" || mode == "debug", "Received an unknown command {}", mode);
 
-	program.start_execution();
+	if (mode == "run") {
+		auto program = _N_PARSE_UTILS::file_parse<exec_mode::NORMAL>(file_content);
+		program.start_execution();
+	} else {
+		auto program = _N_PARSE_UTILS::file_parse<exec_mode::DEBUG>(file_content);
+		program.start_execution();
+	}
 
 	return 0;
 }
