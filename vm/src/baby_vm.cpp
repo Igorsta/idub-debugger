@@ -1,3 +1,4 @@
+#include "defer.h"
 #include "inline.h"
 #include "musttail.h"
 #include <bits/stdc++.h>
@@ -5,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <tuple>
 #include <unordered_map>
 
 ///////////////////// DECLARATIONS ////////////////////////////
@@ -17,10 +19,14 @@ enum class exec_mode {
 struct instrutction_t;
 struct frame_t;
 struct memory_space;
+struct debug_data_t;
 
-template <exec_mode mode = exec_mode::NORMAL>
-struct thread_t;
+template<typename T1, typename T2>
+struct biject_map_t;
 
+template <exec_mode mode = exec_mode::NORMAL> struct thread_t;
+
+struct func_builder_t;
 struct thread_builder_t;
 struct function_t;
 struct flag_data;
@@ -38,7 +44,7 @@ using reg_id_t = uint64_t;
 using reg_id_map = std::unordered_map<std::string, reg_id_t>;
 
 using labl_id_map = std::unordered_map<std::string, labl_id_t>;
-using labl_map = std::unordered_map<func_id_t, size_t>;
+using labl_map = std::unordered_map<labl_id_t, size_t>;
 
 using func_id_map = std::unordered_map<std::string, func_id_t>;
 using func_map = std::unordered_map<func_id_t, function_t>;
@@ -47,7 +53,7 @@ using func_map = std::unordered_map<func_id_t, function_t>;
 
 #define CORE_ASSERT(cond, ...)                                                                     \
 	if (!(cond)) {                                                                                 \
-		std::println(__VA_ARGS__);                                                                   \
+		std::println(__VA_ARGS__);                                                                 \
 		exit(1);                                                                                   \
 	}
 
@@ -178,6 +184,53 @@ REQUIRED_FOR_JUMPS(JUMP_EQ)
 
 ///////////////////// IMPL ////////////////////////////
 
+template<typename T1, typename T2>
+struct biject_map_t {
+	std::unordered_map<T1, T2> by_first;
+	std::unordered_map<T2, T1> by_second;
+
+	T2 from_first(T1 key1){
+		auto it = by_first.find(key1);
+		CORE_ASSERT(it != by_first.end(), "There is no element {} in left set", key1);
+		return it->second;
+	}
+
+	T1 from_second(T2 key2){
+		auto it = by_second.find(key2);
+		CORE_ASSERT(it != by_second.end(), "There is no element {} in right set", key2);
+		return it->second;
+	}
+
+	size_t size() {
+		CORE_ASSERT(by_first.size() == by_second.size(), "bijection requires that both sets are equally big");
+		return by_first.size();
+	}
+
+	bool insert_pair(T1 val1, T2 val2) {
+		if (by_first.find(val1) != by_first.end()) {
+			return false;
+		}
+		if (by_second.find(val2) != by_second.end()) {
+			return false;
+		}
+
+		by_first.emplace({val1, val2});
+		by_second.emplace({val2, val1});
+
+		return true;
+	}
+
+};
+
+struct debug_data_t {
+	template <typename T> struct func_to {
+		using type = std::unordered_map<func_id_t, T>;
+	};
+	using funcs_regs = func_to<reg_id_map>;
+	using funcs_lbls = func_to<labl_id_map>;
+	
+};
+
 struct flag_data {
 	bool were_equal = false;
 	bool first_was_bigger = false;
@@ -280,14 +333,12 @@ struct instrutction_t {
 	bit64 arg[args_per_instr];
 };
 
-template <exec_mode mode>
-struct thread_t {
+template <exec_mode mode> struct thread_t {
 	func_map functions;
-	func_id_map func_id;
+	func_id_t main_id;
 	memory_space memory;
 
 	void start_execution() {
-		func_id_t main_id = func_id.at("main");
 		const instrutction_t *instr = functions.at(main_id).body.data();
 		auto frame = memory.CALL_STACK.get();
 		auto mem = &memory;
@@ -315,19 +366,17 @@ struct thread_t {
 	func_map &get_funcs() { return functions; }
 };
 
-struct thread_builder_t {
-public:
-	func_map functions_impl;
-	func_id_map func_decl;
+struct func_builder_t {
+	func_id_map &func_decl;
 
 	labl_id_map labl_decl;
 	labl_map label_pos;
 
 	reg_id_map reg_decl;
 
-	std::vector<size_t> jump_ops{};
+	std::vector<size_t> jump_ops;
 
-	code_block built_func_body{};
+	code_block built_func_body;
 
 	void add_instr(instrutction_t &instr) { built_func_body.push_back(instr); }
 
@@ -345,45 +394,6 @@ public:
 					"The register {} has been defined two times", name);
 	}
 
-	void commit_func(const std::string &name, uint64_t no_of_args, uint64_t size_of_result) {
-		for (const auto &[name, id] : labl_decl) {
-			CORE_ASSERT(label_pos.find(id) != label_pos.end(),
-						"label {} was refered but not defined", name);
-		}
-		while (jump_ops.size()) {
-			int curr_pos = jump_ops.back();
-			jump_ops.pop_back();
-			instrutction_t &jmp_instr = built_func_body[curr_pos];
-			labl_id_t label_id = jmp_instr.arg[0];
-			jmp_instr.arg[0] = label_pos[label_id] - curr_pos;
-		}
-
-		functions_impl.emplace(refer_func(name), function_t{
-													 .body = built_func_body,
-													 .no_of_args = no_of_args,
-													 .res_size = size_of_result,
-													 .regs = std::vector<bit64>(reg_decl.size()),
-												 });
-
-		built_func_body.clear();
-		reg_decl.clear();
-		label_pos.clear();
-		labl_decl.clear();
-	};
-
-	template <exec_mode MODE>
-	thread_t<MODE> make_thread() {
-		CORE_ASSERT(built_func_body.empty() && reg_decl.empty() && label_pos.empty() &&
-						labl_decl.empty() && jump_ops.empty(),
-					"Trying to make a thread without having a full-built func");
-
-		return {
-			.functions = functions_impl,
-			.func_id = func_decl,
-			.memory = memory_space(),
-		};
-	}
-
 	func_id_t refer_func(const std::string &input) {
 		return func_decl.emplace(input, func_decl.size()).first->second;
 	}
@@ -396,6 +406,72 @@ public:
 		auto it = reg_decl.find(input);
 		CORE_ASSERT(it != reg_decl.end(), "Using undeclared reguster {}", input);
 		return it->second;
+	}
+
+	
+	debug_data_t make_debug_data() {
+		return {};
+	}
+
+	auto invoke_commit(const std::string &name, uint64_t no_of_args, uint64_t size_of_result) {
+		for (const auto &[name, id] : labl_decl) {
+			CORE_ASSERT(label_pos.find(id) != label_pos.end(),
+						"label {} was refered but not defined", name);
+		}
+		while (jump_ops.size()) {
+			int curr_pos = jump_ops.back();
+			jump_ops.pop_back();
+			instrutction_t &jmp_instr = built_func_body[curr_pos];
+			labl_id_t label_id = jmp_instr.arg[0];
+			jmp_instr.arg[0] = label_pos[label_id] - curr_pos;
+		}
+
+		defer(built_func_body.clear(); reg_decl.clear(); label_pos.clear(); labl_decl.clear(););
+
+		return std::make_tuple(refer_func(name),
+							   function_t{
+								   .body = built_func_body,
+								   .no_of_args = no_of_args,
+								   .res_size = size_of_result,
+								   .regs = std::vector<bit64>(reg_decl.size()),
+							   },
+								make_debug_data()
+							   );
+	}
+
+	func_builder_t(func_id_map &ref) :
+		func_decl(ref) {
+			CORE_ASSERT(is_empty(), "Initialization of func_builder got messed up")	
+		};
+
+	
+	bool is_empty() {
+		return built_func_body.empty() && reg_decl.empty() && label_pos.empty() &&
+			   labl_decl.empty() && jump_ops.empty();
+	}
+};
+
+struct thread_builder_t {
+public:
+	static constexpr std::string start_func_name = "main";
+	func_map functions_impl;
+	func_id_map func_decl;
+	func_builder_t func_builder = func_builder_t(func_decl);
+
+	void commit_func(const std::string &name, uint64_t no_of_args, uint64_t size_of_result) {
+		auto [id, impl, debug] = func_builder.invoke_commit(name, no_of_args, size_of_result);
+
+		functions_impl.emplace(id, impl);
+	};
+
+	template <exec_mode MODE> thread_t<MODE> make_thread() {
+		CORE_ASSERT(func_builder.is_empty(), "Trying to make a thread without having a full-built func");
+		CORE_ASSERT(func_builder.func_decl.find(start_func_name) != func_builder.func_decl.end(), "There is no {} in the loaded file", start_func_name);
+		return {
+			.functions = functions_impl,
+			.main_id = func_builder.func_decl[start_func_name],
+			.memory = memory_space(),
+		};
 	}
 
 	void validate_prog() {
@@ -435,10 +511,9 @@ constexpr std::string regex_arg_t(const operand_t &arg) {
 };
 
 constexpr std::string regex_func() {
-	return "\\s*fun\\s+" + regex_arg_t(operand_t::FUNC_NAME) +
-		   "\\s*\\(\\s*" + regex_arg_t(operand_t::DECIMAL_NUM) + "\\s*\\)" +
-		   "\\s*->\\s*" + regex_arg_t(operand_t::DECIMAL_NUM) + "\\s*:\\s*" + 
-		   "\\s*\\{([^}]*)\\}";
+	return "\\s*fun\\s+" + regex_arg_t(operand_t::FUNC_NAME) + "\\s*\\(\\s*" +
+		   regex_arg_t(operand_t::DECIMAL_NUM) + "\\s*\\)" + "\\s*->\\s*" +
+		   regex_arg_t(operand_t::DECIMAL_NUM) + "\\s*:\\s*" + "\\s*\\{([^}]*)\\}";
 }
 
 namespace _N_PARSE_UTILS {
@@ -447,13 +522,13 @@ constexpr bit64 parse_arg_t(thread_builder_t &builder, operand_t type, std::stri
 	case operand_t::DECIMAL_NUM:
 		return std::stoull(input);
 	case operand_t::REGISTER_ID:
-		return builder.refer_reg(input);
+		return builder.func_builder.refer_reg(input);
 	case operand_t::REG_WITH_PTR:
-		return builder.refer_reg(input);
+		return builder.func_builder.refer_reg(input);
 	case operand_t::FUNC_NAME:
-		return builder.refer_func(input);
+		return builder.func_builder.refer_func(input);
 	case operand_t::LABEL_ID:
-		return builder.refer_label(input);
+		return builder.func_builder.refer_label(input);
 	}
 
 	CORE_ASSERT(false, "operand {} does not have a defined regex", int(type));
@@ -543,7 +618,7 @@ std::unordered_map<std::string, const std::vector<operand_t> &> str_to_arg = {
 		for (int i = 0; i < args.size(); i++) {                                                    \
 			instr.arg[i] = _N_PARSE_UTILS::parse_arg_t(builder, args[i], matches[i + 1]);          \
 		}                                                                                          \
-		builder.add_instr(instr);                                                                  \
+		builder.func_builder.add_instr(instr);                                                                  \
 	}
 
 PARSE_SIMPLE_IMPL(STCK_INIT)
@@ -589,14 +664,14 @@ PARSE_SIMPLE_IMPL(READ_HEAP)
 			}                                                                                      \
 		}                                                                                          \
                                                                                                    \
-		builder.add_jump(instr);                                                                   \
+		builder.func_builder.add_jump(instr);                                                                   \
 	}
 
 PARSE_JUMPS_IMPL(JUMP)
 PARSE_JUMPS_IMPL(JUMP_EQ)
 
-void _N_PARSE_OTHER::LABEL(PARSE_OPCODE_ARGS) { builder.define_labl(matches[1]); }
-void _N_PARSE_OTHER::DEMAND_REG(PARSE_OPCODE_ARGS) { builder.define_reg(matches[1]); }
+void _N_PARSE_OTHER::LABEL(PARSE_OPCODE_ARGS) { builder.func_builder.define_labl(matches[1]); }
+void _N_PARSE_OTHER::DEMAND_REG(PARSE_OPCODE_ARGS) { builder.func_builder.define_reg(matches[1]); }
 
 namespace _N_PARSE_UTILS {
 void nop(PARSE_OPCODE_ARGS) { return; }
@@ -685,8 +760,7 @@ void parse_line(const std::string &line, thread_builder_t &builder) {
 	CORE_ASSERT(false, "Line \"{}\" could not be parsed", line);
 }
 
-template <exec_mode MODE>
-thread_t<MODE> file_parse(std::string &content) {
+template <exec_mode MODE> thread_t<MODE> file_parse(std::string &content) {
 	thread_builder_t res{};
 
 	static const std::regex func_re(regex_func());
