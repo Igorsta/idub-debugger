@@ -35,7 +35,6 @@ fun test(1) -> 1: {
 	demand_reg $5
 	
 	label START
-	init
 	input_reg $4
 	input_reg $5
 	cmp_reg $4, $5

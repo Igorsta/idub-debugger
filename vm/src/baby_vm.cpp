@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <tuple>
 #include <unordered_map>
 
@@ -54,7 +55,7 @@ using func_map = std::unordered_map<func_id_t, function_t>;
 #define CORE_ASSERT(cond, ...)                                                                     \
 	if (!(cond)) {                                                                                 \
 		std::println(__VA_ARGS__);                                                                 \
-		exit(1);                                                                                   \
+		assert(false);                                                                                   \
 	}
 
 #define CONST_RAW_EXEC_ARGS                                                                        \
@@ -186,40 +187,46 @@ REQUIRED_FOR_JUMPS(JUMP_EQ)
 
 template<typename T1, typename T2>
 struct biject_map_t {
-	std::unordered_map<T1, T2> by_first;
-	std::unordered_map<T2, T1> by_second;
+	std::unordered_map<T1, T2> map_1_to_2;
+	std::unordered_map<T2, T1> map_2_to_1;
 
-	T2 from_first(T1 key1){
-		auto it = by_first.find(key1);
-		CORE_ASSERT(it != by_first.end(), "There is no element {} in left set", key1);
-		return it->second;
+	std::optional<T2> by_first(T1 key1){
+		auto it = map_1_to_2.find(key1);
+		return (it == map_1_to_2.end()) ? std::optional<T2>{} : it->second;
 	}
 
-	T1 from_second(T2 key2){
-		auto it = by_second.find(key2);
-		CORE_ASSERT(it != by_second.end(), "There is no element {} in right set", key2);
-		return it->second;
+	std::optional<T1> by_second(T2 key2){
+		auto it = map_2_to_1.find(key2);
+		return (it == map_2_to_1.end()) ? std::optional<T1>{} : it->second;
 	}
 
 	size_t size() {
-		CORE_ASSERT(by_first.size() == by_second.size(), "bijection requires that both sets are equally big");
-		return by_first.size();
+		CORE_ASSERT(map_1_to_2.size() == map_2_to_1.size(), "bijection requires that both sets are equally big");
+		return map_1_to_2.size();
 	}
 
-	bool insert_pair(T1 val1, T2 val2) {
-		if (by_first.find(val1) != by_first.end()) {
-			return false;
-		}
-		if (by_second.find(val2) != by_second.end()) {
-			return false;
+	std::pair<bool, T2> emplace_first(T1 key1, T2 val2) {
+		CORE_ASSERT(map_2_to_1.find(val2) == map_2_to_1.end(),
+					"Trying to bind {} but it is already binded in right set", val2);
+
+		auto it1 = map_1_to_2.find(key1); 
+		if (it1 != map_1_to_2.end()) {
+			return std::make_tuple(false, it1->second);
 		}
 
-		by_first.emplace({val1, val2});
-		by_second.emplace({val2, val1});
-
-		return true;
+		map_1_to_2.emplace(key1, val2);
+		map_2_to_1.emplace(val2, key1);
+		return std::make_tuple(true, val2);
 	}
 
+	void clear() {
+		map_1_to_2.clear();
+		map_2_to_1.clear();
+	}
+
+	bool empty() {
+		return (size() == 0);
+	}
 };
 
 struct debug_data_t {
@@ -369,10 +376,11 @@ template <exec_mode mode> struct thread_t {
 struct func_builder_t {
 	func_id_map &func_decl;
 
-	labl_id_map labl_decl;
+	biject_map_t<std::string, labl_id_t> labl_decl;
 	labl_map label_pos;
 
-	reg_id_map reg_decl;
+	biject_map_t<std::string, reg_id_t> reg_decl;
+	// regs_id_map reg_decl;
 
 	std::vector<size_t> jump_ops;
 
@@ -390,7 +398,7 @@ struct func_builder_t {
 	}
 
 	void define_reg(const std::string &name) {
-		CORE_ASSERT(reg_decl.emplace(name, reg_decl.size()).second,
+		CORE_ASSERT(reg_decl.emplace_first(name, reg_decl.size()).first,
 					"The register {} has been defined two times", name);
 	}
 
@@ -399,13 +407,13 @@ struct func_builder_t {
 	}
 
 	labl_id_t refer_label(const std::string &input) {
-		return labl_decl.emplace(input, labl_decl.size()).first->second;
+		return labl_decl.emplace_first(input, labl_decl.size()).second;
 	}
 
 	reg_id_t refer_reg(const std::string &input) {
-		auto it = reg_decl.find(input);
-		CORE_ASSERT(it != reg_decl.end(), "Using undeclared reguster {}", input);
-		return it->second;
+		auto held = reg_decl.by_first(input);
+		CORE_ASSERT(held.has_value(), "Using undeclared reguster {}", input);
+		return held.value();
 	}
 
 	
@@ -414,7 +422,7 @@ struct func_builder_t {
 	}
 
 	auto invoke_commit(const std::string &name, uint64_t no_of_args, uint64_t size_of_result) {
-		for (const auto &[name, id] : labl_decl) {
+		for (const auto &[name, id] : labl_decl.map_1_to_2) {
 			CORE_ASSERT(label_pos.find(id) != label_pos.end(),
 						"label {} was refered but not defined", name);
 		}
