@@ -1,15 +1,12 @@
 // This file serves as sanity check for the author
 // together with site CompilerExplorer
 // some of th code was generated/inspired by AI
+#include "musttail.h"
 #include <bits/stdc++.h>
 #include <cstddef>
 #include <cstdint>
-#include "musttail.h"
 
-template <std::convertible_to<int>... Args>
-auto sum(Args... args) {
-    return (args + ...);
-}
+template <std::convertible_to<int>... Args> auto sum(Args... args) { return (args + ...); }
 
 //////////////// PACK INDEXING WORKS ON RUNTIME //////////////////////
 // template <std::convertible_to<int>... Args>
@@ -23,8 +20,7 @@ auto sum(Args... args) {
 // 	return ans;
 // }
 
-template <std::convertible_to<int>... Args>
-auto sum3(Args... args) {
+template <std::convertible_to<int>... Args> auto sum3(Args... args) {
 	std::array<int, sizeof...(Args)> buffer{args...};
 
 	int ans = 0;
@@ -48,15 +44,12 @@ int collatz(size_t x, size_t acc = 0) {
 	if (x == 1) {
 		return acc;
 	}
-	MUST_TAIL return collatz(
-		x % 2  == 0 ? x / 2 : 3 * x + 1,
-		acc + 1
-	);
+	MUST_TAIL return collatz(x % 2 == 0 ? x / 2 : 3 * x + 1, acc + 1);
 }
 
 using func_type = void(int);
 
-#define FUNC_NAME my_cool_func_name
+#define FUNC_NAME  my_cool_func_name
 #define FUNC_NAME2 my_cool_func_name
 
 static void FUNC_NAME() {
@@ -64,14 +57,12 @@ static void FUNC_NAME() {
 };
 
 namespace element {
-	static func_type FUNC_NAME2;
+static func_type FUNC_NAME2;
 }
 
 // void element::my_cool_func_name(int arg) { std::cout << "arg: " << arg << "\n"; }
 
-void element::FUNC_NAME2(int arg) {
-	std::cout << "arg: " << arg << "\n";
-}
+void element::FUNC_NAME2(int arg) { std::cout << "arg: " << arg << "\n"; }
 
 //////////////////////////// MACRO FUN ////////////////////////////
 
@@ -85,20 +76,19 @@ void element::FUNC_NAME2(int arg) {
 // std::cout << TOSTRING(EXAMPLE_MACRO) << std::endl;     // Output: "\"Hello, World\""
 // std::cout << TOSTRING(ANOTHER_MACRO) << std::endl;	   // Output: "42 + 1"
 
-
 /////////////////////////// REAL USE ////////////////////////////////
 
-#define STCK_INIT init
-#define STCK_DEINIT deinit
-#define REG_TO_STCK reg_to_stk
-#define STCK_TO_REG stk_to_reg
-#define REG_TO_RVAL reg_to_retval
-#define REG_TO_REG reg_to_reg
+#define STCK_INIT	 init
+#define STCK_DEINIT	 deinit
+#define REG_TO_STCK	 reg_to_stk
+#define STCK_TO_REG	 stk_to_reg
+#define REG_TO_RVAL	 reg_to_retval
+#define REG_TO_REG	 reg_to_reg
 #define INPUT_TO_REG input_reg
-#define OUTPUT_REG output_reg
-#define RETURN ret
-#define EXIT_PROG exit
-#define CALL call
+#define OUTPUT_REG	 output_reg
+#define RETURN		 ret
+#define EXIT_PROG	 exit
+#define CALL		 call
 
 // Step 1: normal stringification
 #define STRINGIFY(x) #x
@@ -111,8 +101,7 @@ enum class EXEC_MODES {
 	STACK,
 };
 
-template <EXEC_MODES mode = EXEC_MODES::TAIL>
-uint64_t factorial(uint64_t n, uint64_t acc = 1) {
+template <EXEC_MODES mode = EXEC_MODES::TAIL> uint64_t factorial(uint64_t n, uint64_t acc = 1) {
 	if (n == 0) {
 		return acc;
 	}
