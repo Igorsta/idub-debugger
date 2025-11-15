@@ -1,15 +1,13 @@
-fun main(0) -> 1: {
+fun main(0) -> 0: {
 	demand_reg $0
 	demand_reg $1
 	input_reg $0
-	init
 	init
 	call_func test
 	stack_to_reg $1
 	deinit
 	output_reg $1
-	reg_to_retval $0
-	exit_prog
+	exit_prog $0
 }
 
 fun test(1) -> 1: {

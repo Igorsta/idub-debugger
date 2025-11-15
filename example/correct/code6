@@ -22,8 +22,7 @@ fun main(0) -> 1 : {
 	output_reg $1
 	
 	label END
-	reg_to_retval $0
-	exit_prog
+	exit_prog $0
 }
 
 fun test(1) -> 1: {

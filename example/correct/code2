@@ -15,6 +15,5 @@ fun main(0) -> 1: {
 	label LAST				# ... DO ABSOULTELY NOTHING
 	input_reg $3
 	output_reg $3
-	reg_to_retval $3
-	exit_prog
+	exit_prog $3
 }

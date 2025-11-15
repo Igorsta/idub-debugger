@@ -2,6 +2,11 @@
 #include "inline.h"
 #include "musttail.h"
 #include <bits/stdc++.h>
+#include <cstddef>
+#include <cstdint>
+#include <functional>
+#include <optional>
+#include <sys/types.h>
 #include <unordered_map>
 
 ///////////////////// DECLARATIONS ////////////////////////////
@@ -21,6 +26,7 @@ template <typename T1, typename T2> struct biject_map_t;
 template <exec_mode mode = exec_mode::NORMAL> struct thread_t;
 
 struct func_builder_t;
+struct code_pos_t;
 struct thread_builder_t;
 struct function_t;
 struct flag_data;
@@ -34,6 +40,7 @@ using code_block = std::vector<instrutction_t>;
 using func_id_t = uint64_t;
 using labl_id_t = uint64_t;
 using reg_id_t = uint64_t;
+using breakpoints_id = uint64_t;
 
 using reg_id_map = biject_map_t<std::string, reg_id_t>;
 
@@ -64,7 +71,7 @@ namespace _N_EXEC_RAW {
 	[[maybe_unused]] const instrutction_t *&instr, [[maybe_unused]] memory_space *mem_space,       \
 		[[maybe_unused]] frame_t *&frame, [[maybe_unused]] func_map *avail_funcs
 #define FWD_RAW_ARGS instr, mem_space, frame, avail_funcs
-using ret_t = std::optional<bit64>;
+using ret_t = std::ptrdiff_t;
 using func_t = ret_t(RAW_EXEC_ARGS);
 
 }; // namespace _N_EXEC_RAW
@@ -178,6 +185,47 @@ REQUIRED_FOR_JUMPS(JUMP_EQ)
 
 ///////////////////// IMPL ////////////////////////////
 
+struct instrutction_t {
+	constexpr static size_t args_per_instr = 2;
+	_N_EXEC_RAW::func_t *action;
+	bit64 arg[args_per_instr];
+
+	instrutction_t(_N_EXEC_RAW::func_t *action) : action{action} {
+		for (int i = 0; i < args_per_instr; i++) {
+			arg[i] = 0;
+		}
+	}
+};
+
+struct code_pos_t {
+	func_id_t func_id;
+	size_t pos;
+
+	bool operator==(const code_pos_t &oth) const {
+		return oth.func_id == func_id && pos == oth.pos;
+	}
+};
+
+struct flag_data {
+	bool were_equal = false;
+	bool first_was_bigger = false;
+};
+
+struct frame_t {
+	const instrutction_t *instr;
+	bit64 *stack_start;
+	bit64 *stack_head;
+	flag_data flags;
+	func_id_t cur_func_id;
+};
+
+struct function_t {
+	code_block body;
+	uint64_t no_of_args;
+	uint64_t res_size;
+	mutable std::vector<bit64> regs;
+};
+
 template <typename T1, typename T2> struct biject_map_t {
 	std::unordered_map<T1, T2> map_1_to_2;
 	std::unordered_map<T2, T1> map_2_to_1;
@@ -220,6 +268,14 @@ template <typename T1, typename T2> struct biject_map_t {
 	bool empty() { return (size() == 0); }
 };
 
+namespace std {
+template <> struct hash<code_pos_t> {
+	constexpr size_t operator()(const code_pos_t &code_pos) const {
+		return std::hash<func_id_t>{}(code_pos.func_id) ^ code_pos.pos;
+	}
+};
+} // namespace std
+
 struct thread_dbg_data_t {
 
 	struct func_dbg_data_t {
@@ -229,27 +285,28 @@ struct thread_dbg_data_t {
 	};
 
 	std::unordered_map<func_id_t, func_dbg_data_t> func_data;
+	biject_map_t<breakpoints_id, code_pos_t> breakpoints;
 	func_id_map function_names;
-};
 
-struct flag_data {
-	bool were_equal = false;
-	bool first_was_bigger = false;
-};
+	std::optional<breakpoints_id> hit_breakpoint(const code_pos_t &position) {
+		return breakpoints.by_second(position);
+	}
 
-struct frame_t {
-	const instrutction_t *instr;
-	bit64 *stack_start;
-	bit64 *stack_head;
-	flag_data flags;
-	func_id_t cur_func_id;
-};
+	void dbg_cntrl(code_pos_t position, thread_t<exec_mode::DEBUG>& thread) {
+		bool run_cli = false;
+		if (auto breakpoint = hit_breakpoint(position); breakpoint.has_value()) {
+			std::cout << "Just hit a breakpoint!\n";
+			run_cli = true;
+		}
 
-struct function_t {
-	code_block body;
-	uint64_t no_of_args;
-	uint64_t res_size;
-	mutable std::vector<bit64> regs;
+		if (run_cli) [[unlikely]] {
+			cli();
+		}
+	}
+
+	void cli() {
+		;
+	}
 };
 
 struct heap_t {
@@ -327,19 +384,18 @@ struct memory_space {
 	}
 };
 
-constexpr size_t args_per_instr = 2;
-
-struct instrutction_t {
-	_N_EXEC_RAW::func_t *action;
-	bit64 arg[args_per_instr];
-};
-
 template <exec_mode mode> struct thread_t {
 	func_map functions;
 	func_id_t main_id;
 	memory_space memory;
 
-	void start_execution() {
+	
+	static thread_dbg_data_t &dummy_dbg_data() {
+		static thread_dbg_data_t dummy;
+		return dummy;
+	}
+
+	void start_execution(thread_dbg_data_t& dbg = dummy_dbg_data()) {
 		const instrutction_t *instr = functions.at(main_id).body.data();
 		auto frame = memory.CALL_STACK.get();
 		auto mem = &memory;
@@ -348,23 +404,39 @@ template <exec_mode mode> struct thread_t {
 		frame->stack_start = memory.MEM_STACK.get();
 		frame->cur_func_id = main_id;
 
-		exec(instr, frame);
+		try {
+			if constexpr (mode == exec_mode::NORMAL) {
+				exec(instr, frame);
+			} else {
+				exec(instr, frame, dbg);
+			}
+		} catch (bit64 result) {
+			// std::print("Now the VM knows that the program ended with {}\n", result);
+		}
 	}
 
-	void exec(const instrutction_t *&instr, frame_t *&frame) {
+	void exec(const instrutction_t *&instr, frame_t *&frame) requires (mode == exec_mode::NORMAL) {
 		{
-			auto offset = instr->action(instr, &memory, frame, &functions);
-
-			if (!offset.has_value()) [[unlikely]] {
-				return;
-			}
-			instr += offset.value();
+			instr += instr->action(instr, &memory, frame, &functions);
 		}
 
 		MUST_TAIL return exec(instr, frame);
 	}
 
-	func_map &get_funcs() { return functions; }
+	void exec(const instrutction_t *&instr, frame_t *&frame, thread_dbg_data_t& dbg) requires (mode == exec_mode::DEBUG) {
+		try {
+			instr += instr->action(instr, &memory, frame, &functions);
+		} catch (bit64 result) {
+			return;
+		}
+
+		MUST_TAIL return exec(instr, frame, dbg);
+	}
+
+	code_pos_t get_position(const instrutction_t *&instr, frame_t *&frame) {
+		auto func_id = frame->cur_func_id;
+		return code_pos_t { .func_id = func_id, .pos = instr - functions[func_id].body.data()};
+	}
 };
 
 struct func_builder_t {
@@ -558,7 +630,7 @@ ENLIST_OPERANDS(CMP_REG, operand_t::REGISTER_ID, operand_t::REGISTER_ID)
 ENLIST_OPERANDS(INPUT_TO_REG, operand_t::REGISTER_ID)
 ENLIST_OPERANDS(OUTPUT_REG, operand_t::REGISTER_ID)
 ENLIST_OPERANDS(FUNC_RET)
-ENLIST_OPERANDS(EXIT_PROG)
+ENLIST_OPERANDS(EXIT_PROG, operand_t::REGISTER_ID)
 ENLIST_OPERANDS(CALL, operand_t::FUNC_NAME)
 
 ENLIST_OPERANDS(JUMP, operand_t::LABEL_ID)
@@ -615,11 +687,7 @@ std::unordered_map<std::string, const std::vector<operand_t> &> str_to_arg = {
 
 #define PARSE_SIMPLE_IMPL(macro)                                                                   \
 	void _N_PARSE_SIMPLE::macro(PARSE_OPCODE_ARGS) {                                               \
-		instrutction_t instr;                                                                      \
-		instr.action = &::_N_EXEC_RAW::macro;                                                      \
-		for (size_t i = 0; i < args_per_instr; i++) {                                              \
-			instr.arg[i] = 0;                                                                      \
-		}                                                                                          \
+		instrutction_t instr{&::_N_EXEC_RAW::macro};                                               \
                                                                                                    \
 		const auto &args = ::_N_ARGS::macro();                                                     \
 		for (int i = 0; i < args.size(); i++) {                                                    \
@@ -653,11 +721,7 @@ PARSE_SIMPLE_IMPL(READ_HEAP)
 
 #define PARSE_JUMPS_IMPL(macro)                                                                    \
 	void _N_PARSE_JUMPS::macro(PARSE_OPCODE_ARGS) {                                                \
-		instrutction_t instr;                                                                      \
-		instr.action = &::_N_EXEC_RAW::macro;                                                      \
-		for (size_t i = 0; i < args_per_instr; i++) {                                              \
-			instr.arg[i] = 0;                                                                      \
-		}                                                                                          \
+		instrutction_t instr{&::_N_EXEC_RAW::macro};                                               \
                                                                                                    \
 		int other_idx = 1;                                                                         \
 		const auto &args = ::_N_ARGS::macro();                                                     \
@@ -939,14 +1003,12 @@ _N_EXEC_RAW::ret_t _N_EXEC_RAW::FUNC_RET(RAW_EXEC_ARGS) {
 }
 
 _N_EXEC_RAW::ret_t _N_EXEC_RAW::EXIT_PROG(RAW_EXEC_ARGS) {
-	CORE_ASSERT(frame->stack_head == mem_space->MEM_STACK.get() + 1,
-				"When exiting program, only one element should be on memory stack");
-	CORE_ASSERT(frame == mem_space->CALL_STACK.get(),
-				"You cannot exit prgram from other function than main (yet)");
+	auto arg0 = instr->arg[0];
+	auto ret_val = get_reg(arg0, FWD_RAW_ARGS);
 
-	std::cout << std::format("program exited with {}\n", *mem_space->MEM_STACK.get());
+	std::cout << std::format("program exited with {}\n", ret_val);
 
-	return {};
+	throw ret_val;
 }
 
 _N_EXEC_RAW::ret_t _N_EXEC_RAW::JUMP(RAW_EXEC_ARGS) { return instr->arg[0]; }
