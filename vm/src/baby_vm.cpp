@@ -2,12 +2,6 @@
 #include "inline.h"
 #include "musttail.h"
 #include <bits/stdc++.h>
-#include <cassert>
-#include <cstddef>
-#include <cstdint>
-#include <memory>
-#include <optional>
-#include <tuple>
 #include <unordered_map>
 
 ///////////////////// DECLARATIONS ////////////////////////////
@@ -20,10 +14,9 @@ enum class exec_mode {
 struct instrutction_t;
 struct frame_t;
 struct memory_space;
-struct debug_data_t;
+struct thread_dbg_data_t;
 
-template<typename T1, typename T2>
-struct biject_map_t;
+template <typename T1, typename T2> struct biject_map_t;
 
 template <exec_mode mode = exec_mode::NORMAL> struct thread_t;
 
@@ -42,12 +35,12 @@ using func_id_t = uint64_t;
 using labl_id_t = uint64_t;
 using reg_id_t = uint64_t;
 
-using reg_id_map = std::unordered_map<std::string, reg_id_t>;
+using reg_id_map = biject_map_t<std::string, reg_id_t>;
 
-using labl_id_map = std::unordered_map<std::string, labl_id_t>;
+using labl_id_map = biject_map_t<std::string, labl_id_t>;
 using labl_map = std::unordered_map<labl_id_t, size_t>;
 
-using func_id_map = std::unordered_map<std::string, func_id_t>;
+using func_id_map = biject_map_t<std::string, func_id_t>;
 using func_map = std::unordered_map<func_id_t, function_t>;
 
 ///////////////////// EXEC MACRO ////////////////////////////
@@ -55,7 +48,7 @@ using func_map = std::unordered_map<func_id_t, function_t>;
 #define CORE_ASSERT(cond, ...)                                                                     \
 	if (!(cond)) {                                                                                 \
 		std::println(__VA_ARGS__);                                                                 \
-		assert(false);                                                                                   \
+		assert(false);                                                                             \
 	}
 
 #define CONST_RAW_EXEC_ARGS                                                                        \
@@ -185,23 +178,23 @@ REQUIRED_FOR_JUMPS(JUMP_EQ)
 
 ///////////////////// IMPL ////////////////////////////
 
-template<typename T1, typename T2>
-struct biject_map_t {
+template <typename T1, typename T2> struct biject_map_t {
 	std::unordered_map<T1, T2> map_1_to_2;
 	std::unordered_map<T2, T1> map_2_to_1;
 
-	std::optional<T2> by_first(T1 key1){
+	std::optional<T2> by_first(T1 key1) {
 		auto it = map_1_to_2.find(key1);
 		return (it == map_1_to_2.end()) ? std::optional<T2>{} : it->second;
 	}
 
-	std::optional<T1> by_second(T2 key2){
+	std::optional<T1> by_second(T2 key2) {
 		auto it = map_2_to_1.find(key2);
 		return (it == map_2_to_1.end()) ? std::optional<T1>{} : it->second;
 	}
 
 	size_t size() {
-		CORE_ASSERT(map_1_to_2.size() == map_2_to_1.size(), "bijection requires that both sets are equally big");
+		CORE_ASSERT(map_1_to_2.size() == map_2_to_1.size(),
+					"bijection requires that both sets are equally big");
 		return map_1_to_2.size();
 	}
 
@@ -209,7 +202,7 @@ struct biject_map_t {
 		CORE_ASSERT(map_2_to_1.find(val2) == map_2_to_1.end(),
 					"Trying to bind {} but it is already binded in right set", val2);
 
-		auto it1 = map_1_to_2.find(key1); 
+		auto it1 = map_1_to_2.find(key1);
 		if (it1 != map_1_to_2.end()) {
 			return std::make_tuple(false, it1->second);
 		}
@@ -224,18 +217,19 @@ struct biject_map_t {
 		map_2_to_1.clear();
 	}
 
-	bool empty() {
-		return (size() == 0);
-	}
+	bool empty() { return (size() == 0); }
 };
 
-struct debug_data_t {
-	template <typename T> struct func_to {
-		using type = std::unordered_map<func_id_t, T>;
+struct thread_dbg_data_t {
+
+	struct func_dbg_data_t {
+		reg_id_map registers;
+		labl_id_map labels;
+		labl_map label_positions;
 	};
-	using funcs_regs = func_to<reg_id_map>;
-	using funcs_lbls = func_to<labl_id_map>;
-	
+
+	std::unordered_map<func_id_t, func_dbg_data_t> func_data;
+	func_id_map function_names;
 };
 
 struct flag_data {
@@ -376,11 +370,10 @@ template <exec_mode mode> struct thread_t {
 struct func_builder_t {
 	func_id_map &func_decl;
 
-	biject_map_t<std::string, labl_id_t> labl_decl;
+	labl_id_map labl_decl;
 	labl_map label_pos;
 
-	biject_map_t<std::string, reg_id_t> reg_decl;
-	// regs_id_map reg_decl;
+	reg_id_map reg_decl;
 
 	std::vector<size_t> jump_ops;
 
@@ -403,7 +396,7 @@ struct func_builder_t {
 	}
 
 	func_id_t refer_func(const std::string &input) {
-		return func_decl.emplace(input, func_decl.size()).first->second;
+		return func_decl.emplace_first(input, func_decl.size()).second;
 	}
 
 	labl_id_t refer_label(const std::string &input) {
@@ -416,9 +409,12 @@ struct func_builder_t {
 		return held.value();
 	}
 
-	
-	debug_data_t make_debug_data() {
-		return {};
+	thread_dbg_data_t::func_dbg_data_t make_debug_data() {
+		return {
+			.registers = reg_decl,
+			.labels = labl_decl,
+			.label_positions = label_pos,
+		};
 	}
 
 	auto invoke_commit(const std::string &name, uint64_t no_of_args, uint64_t size_of_result) {
@@ -443,16 +439,14 @@ struct func_builder_t {
 								   .res_size = size_of_result,
 								   .regs = std::vector<bit64>(reg_decl.size()),
 							   },
-								make_debug_data()
-							   );
+							   make_debug_data());
 	}
 
 	func_builder_t(func_id_map &ref) :
 		func_decl(ref) {
-			CORE_ASSERT(is_empty(), "Initialization of func_builder got messed up")	
+			CORE_ASSERT(is_empty(), "Initialization of func_builder got messed up")
 		};
 
-	
 	bool is_empty() {
 		return built_func_body.empty() && reg_decl.empty() && label_pos.empty() &&
 			   labl_decl.empty() && jump_ops.empty();
@@ -464,26 +458,31 @@ public:
 	static constexpr std::string start_func_name = "main";
 	func_map functions_impl;
 	func_id_map func_decl;
+	thread_dbg_data_t debug_data;
 	func_builder_t func_builder = func_builder_t(func_decl);
 
 	void commit_func(const std::string &name, uint64_t no_of_args, uint64_t size_of_result) {
 		auto [id, impl, debug] = func_builder.invoke_commit(name, no_of_args, size_of_result);
 
 		functions_impl.emplace(id, impl);
+		debug_data.func_data.emplace(id, debug);
+		CORE_ASSERT(debug_data.function_names.emplace_first(name, id).first);
 	};
 
 	template <exec_mode MODE> thread_t<MODE> make_thread() {
-		CORE_ASSERT(func_builder.is_empty(), "Trying to make a thread without having a full-built func");
-		CORE_ASSERT(func_builder.func_decl.find(start_func_name) != func_builder.func_decl.end(), "There is no {} in the loaded file", start_func_name);
+		CORE_ASSERT(func_builder.is_empty(),
+					"Trying to make a thread without having a full-built func");
+		auto el = func_builder.func_decl.by_first(start_func_name);
+		CORE_ASSERT(el.has_value(), "There is no {} in the loaded file", start_func_name);
 		return {
 			.functions = functions_impl,
-			.main_id = func_builder.func_decl[start_func_name],
+			.main_id = el.value(),
 			.memory = memory_space(),
 		};
 	}
 
 	void validate_prog() {
-		for (auto &[_, id] : func_decl) {
+		for (auto &[_, id] : func_decl.map_1_to_2) {
 			CORE_ASSERT(functions_impl.find(id) != functions_impl.end(),
 						"function {} does not have implementation", _);
 		}
@@ -626,7 +625,7 @@ std::unordered_map<std::string, const std::vector<operand_t> &> str_to_arg = {
 		for (int i = 0; i < args.size(); i++) {                                                    \
 			instr.arg[i] = _N_PARSE_UTILS::parse_arg_t(builder, args[i], matches[i + 1]);          \
 		}                                                                                          \
-		builder.func_builder.add_instr(instr);                                                                  \
+		builder.func_builder.add_instr(instr);                                                     \
 	}
 
 PARSE_SIMPLE_IMPL(STCK_INIT)
@@ -672,7 +671,7 @@ PARSE_SIMPLE_IMPL(READ_HEAP)
 			}                                                                                      \
 		}                                                                                          \
                                                                                                    \
-		builder.func_builder.add_jump(instr);                                                                   \
+		builder.func_builder.add_jump(instr);                                                      \
 	}
 
 PARSE_JUMPS_IMPL(JUMP)
@@ -823,10 +822,10 @@ INLINE static bit64 &get_reg(bit64 arg0, CONST_RAW_EXEC_ARGS) {
 				cur_func);
 
 	auto &function = it->second;
-	CORE_ASSERT(
-		arg0 < function.regs.size(),
-		"Trying to access registr out of bounds: function has {} registers and optcode asks for {}",
-		function.regs.size(), arg0);
+	CORE_ASSERT(arg0 < function.regs.size(),
+				"Trying to access registr out of bounds: function has {} registers and optcode "
+				"asks for {}",
+				function.regs.size(), arg0);
 
 	return function.regs[arg0];
 }

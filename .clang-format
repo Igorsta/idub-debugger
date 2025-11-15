@@ -19,4 +19,4 @@ AllowAllConstructorInitializersOnNextLine: false
 IndentPPDirectives: BeforeHash
 
 AlignConsecutiveMacros:
-  Enabled: true
+  Enabled: true 
