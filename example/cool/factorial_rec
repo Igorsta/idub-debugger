@@ -1,0 +1,62 @@
+fun main(0) -> 0: {
+	label REG_DMND
+	demand_reg $n
+	demand_reg $1
+	demand_reg $out
+	demand_reg $ext
+	
+	label REG_INIT
+	input_reg $n
+	init_imm $1, 1
+	init_imm $ext, 0
+
+	label STCK_INIT
+	init
+	reg_to_stack $1
+	init
+	reg_to_stack $n
+	
+	label FUNC_CALL
+	call_func factorial
+
+	label STCK_DEINIT
+	deinit
+	stack_to_reg $out
+	deinit
+
+	label END
+	output_reg $out
+	exit_prog $ext
+}
+
+fun factorial(2) -> 2: {
+	label REG_DMND
+	demand_reg $acc
+	demand_reg $n
+	demand_reg $1
+	demand_reg $0
+	
+	label REG_INIT
+	stack_to_reg $n
+	init_imm $1, 1
+	init_imm $0, 0
+
+	label COMPARE
+	cmp_reg $n, $0
+	jump_if_eq END
+	
+	label RECURSIVE_CALL
+	deinit
+	stack_to_reg $acc
+	mul_in_place $acc, $n
+	sub_in_place $n, $1
+	reg_to_stack $acc
+	init
+	reg_to_stack $n
+	call_func factorial
+	jump_to END
+
+
+	label END
+	func_return
+}

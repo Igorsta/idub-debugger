@@ -1,0 +1,42 @@
+fun main(0) -> 0 : {
+	demand_reg $ext
+	demand_reg $inp
+	demand_reg $res
+	demand_reg $res2
+
+	input_reg $inp
+	init
+	reg_to_stack $inp
+	
+	call_func put_on_heap
+	stack_to_reg $res
+	deinit
+	
+	read_heap $res2, [$res]
+	output_reg $res2
+
+	exit_prog $ext
+}
+
+
+fun put_on_heap(1) -> 1 : {
+	demand_reg $arg
+	demand_reg $ptr
+	demand_reg $1
+	demand_reg $2
+	
+	label INIT_REG
+	init_imm $1, 1
+	init_imm $2, 2
+	alloc_heap [$ptr], $1
+	stack_to_reg $arg
+	deinit
+
+	label JOB
+	mul_in_place $arg, $2
+	write_heap [$ptr], $arg
+	init
+	reg_to_stack $ptr
+
+	func_return
+}

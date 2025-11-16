@@ -34,7 +34,7 @@ enum class operand_t;
 
 ///////////////////// USINGS ////////////////////////////
 
-using bit64 = uint64_t;
+using unit = uint64_t;
 using code_block = std::vector<instrutction_t>;
 
 using func_id_t = uint64_t;
@@ -95,7 +95,7 @@ using parse_instr_t = void(PARSE_OPCODE_ARGS);
 #define REG_TO_STCK	 reg_to_stack
 #define STCK_TO_REG	 stack_to_reg
 #define REG_TO_RVAL	 reg_to_retval
-#define REG_TO_REG	 reg_to_reg
+#define REG_FROM_REG reg_from_reg
 #define INPUT_TO_REG input_reg
 #define OUTPUT_REG	 output_reg
 #define FUNC_RET	 func_return
@@ -161,7 +161,7 @@ REQUIRED_FOR_SIMPLE(STCK_DEINIT)
 REQUIRED_FOR_SIMPLE(REG_TO_STCK)
 REQUIRED_FOR_SIMPLE(STCK_TO_REG)
 REQUIRED_FOR_SIMPLE(REG_TO_RVAL)
-REQUIRED_FOR_SIMPLE(REG_TO_REG)
+REQUIRED_FOR_SIMPLE(REG_FROM_REG)
 REQUIRED_FOR_SIMPLE(INPUT_TO_REG)
 REQUIRED_FOR_SIMPLE(OUTPUT_REG)
 REQUIRED_FOR_SIMPLE(FUNC_RET)
@@ -188,7 +188,7 @@ REQUIRED_FOR_JUMPS(JUMP_EQ)
 struct instrutction_t {
 	constexpr static size_t args_per_instr = 2;
 	_N_EXEC_RAW::func_t *action;
-	bit64 arg[args_per_instr];
+	unit arg[args_per_instr];
 
 	instrutction_t(_N_EXEC_RAW::func_t *action) : action{action} {
 		for (int i = 0; i < args_per_instr; i++) {
@@ -213,8 +213,8 @@ struct flag_data {
 
 struct frame_t {
 	const instrutction_t *instr;
-	bit64 *stack_start;
-	bit64 *stack_head;
+	unit *stack_start;
+	unit *stack_head;
 	flag_data flags;
 	func_id_t cur_func_id;
 };
@@ -223,7 +223,7 @@ struct function_t {
 	code_block body;
 	uint64_t no_of_args;
 	uint64_t res_size;
-	mutable std::vector<bit64> regs;
+	mutable std::vector<unit> regs;
 };
 
 template <typename T1, typename T2> struct biject_map_t {
@@ -292,7 +292,7 @@ struct thread_dbg_data_t {
 		return breakpoints.by_second(position);
 	}
 
-	void dbg_cntrl(code_pos_t position, thread_t<exec_mode::DEBUG>& thread) {
+	void dbg_cntrl(code_pos_t position, thread_t<exec_mode::DEBUG> &thread) {
 		bool run_cli = false;
 		if (auto breakpoint = hit_breakpoint(position); breakpoint.has_value()) {
 			std::cout << "Just hit a breakpoint!\n";
@@ -304,22 +304,20 @@ struct thread_dbg_data_t {
 		}
 	}
 
-	void cli() {
-		;
-	}
+	void cli() { ; }
 };
 
 struct heap_t {
-	std::unique_ptr<bit64[]> content;
-	std::set<std::pair<bit64, bit64>> allocated;
+	std::unique_ptr<unit[]> content;
+	std::set<std::pair<unit, unit>> allocated;
 	const size_t size;
 
-	heap_t(size_t alloc = 2048) :
-		content(std::make_unique<bit64[]>(alloc)),
+	heap_t(size_t alloc) :
+		content(std::make_unique<unit[]>(alloc)),
 		allocated{},
 		size{alloc} {CORE_ASSERT(content, "Couldn't successfully allocate buffer for heap!")}
 
-		bit64 allocate(bit64 chunk_size) {
+		unit allocate(unit chunk_size) {
 		auto it = allocated.begin();
 		int start = 0;
 
@@ -336,7 +334,7 @@ struct heap_t {
 		return start;
 	}
 
-	void deallocate(bit64 ptr) {
+	void deallocate(unit ptr) {
 		auto it = allocated.lower_bound({ptr, 0});
 
 		CORE_ASSERT(it != allocated.end() && it->first == ptr,
@@ -346,8 +344,8 @@ struct heap_t {
 		return;
 	}
 
-	bit64 read(bit64 ptr) {
-		auto it = allocated.lower_bound({ptr, 0});
+	unit read(unit ptr) {
+		auto it = allocated.upper_bound({ptr, -1});
 
 		CORE_ASSERT(it != allocated.begin() && (--it)->first <= ptr && ptr < it->first + it->second,
 					"address {} was not allocated", ptr);
@@ -355,8 +353,8 @@ struct heap_t {
 		return content[ptr];
 	}
 
-	void write(bit64 ptr, bit64 val) {
-		auto it = allocated.lower_bound({ptr, 0});
+	void write(unit ptr, unit val) {
+		auto it = allocated.upper_bound({ptr, -1});
 
 		CORE_ASSERT(it != allocated.begin() && (--it)->first <= ptr && ptr < it->first + it->second,
 					"address {} was not allocated", ptr);
@@ -369,17 +367,20 @@ struct heap_t {
 struct memory_space {
 	const size_t MEM_STACK_SIZE;
 	const size_t CALL_STACK_SIZE;
+	const size_t HEAP_SIZE;
 
-	std::unique_ptr<bit64[]> MEM_STACK;
+
+	std::unique_ptr<unit[]> MEM_STACK;
 	std::unique_ptr<frame_t[]> CALL_STACK;
 	heap_t heap;
 
-	memory_space(size_t MEM_STACK_SIZE = 10, size_t CALL_STACK_SIZE = 1000) :
+	memory_space(size_t MEM_STACK_SIZE = 10, size_t CALL_STACK_SIZE = 1000, size_t HEAP_SIZE = 2048) :
 		MEM_STACK_SIZE(MEM_STACK_SIZE),
 		CALL_STACK_SIZE(CALL_STACK_SIZE),
-		MEM_STACK(std::make_unique<bit64[]>(MEM_STACK_SIZE)),
+		HEAP_SIZE(HEAP_SIZE),
+		MEM_STACK(std::make_unique<unit[]>(MEM_STACK_SIZE)),
 		CALL_STACK(std::make_unique<frame_t[]>(CALL_STACK_SIZE)),
-		heap{} {
+		heap(2048) {
 		CORE_ASSERT(MEM_STACK && CALL_STACK, "Couldn't allocate memory and call stacks");
 	}
 };
@@ -389,13 +390,12 @@ template <exec_mode mode> struct thread_t {
 	func_id_t main_id;
 	memory_space memory;
 
-	
 	static thread_dbg_data_t &dummy_dbg_data() {
 		static thread_dbg_data_t dummy;
 		return dummy;
 	}
 
-	void start_execution(thread_dbg_data_t& dbg = dummy_dbg_data()) {
+	void start_execution(thread_dbg_data_t &dbg = dummy_dbg_data()) {
 		const instrutction_t *instr = functions.at(main_id).body.data();
 		auto frame = memory.CALL_STACK.get();
 		auto mem = &memory;
@@ -410,12 +410,13 @@ template <exec_mode mode> struct thread_t {
 			} else {
 				exec(instr, frame, dbg);
 			}
-		} catch (bit64 result) {
+		} catch (unit result) {
 			// std::print("Now the VM knows that the program ended with {}\n", result);
 		}
 	}
 
-	void exec(const instrutction_t *&instr, frame_t *&frame) requires (mode == exec_mode::NORMAL) {
+	void exec(const instrutction_t *&instr, frame_t *&frame)
+	{
 		{
 			instr += instr->action(instr, &memory, frame, &functions);
 		}
@@ -423,10 +424,11 @@ template <exec_mode mode> struct thread_t {
 		MUST_TAIL return exec(instr, frame);
 	}
 
-	void exec(const instrutction_t *&instr, frame_t *&frame, thread_dbg_data_t& dbg) requires (mode == exec_mode::DEBUG) {
+	void exec(const instrutction_t *&instr, frame_t *&frame, thread_dbg_data_t &dbg)
+	{
 		try {
 			instr += instr->action(instr, &memory, frame, &functions);
-		} catch (bit64 result) {
+		} catch (unit result) {
 			return;
 		}
 
@@ -435,7 +437,7 @@ template <exec_mode mode> struct thread_t {
 
 	code_pos_t get_position(const instrutction_t *&instr, frame_t *&frame) {
 		auto func_id = frame->cur_func_id;
-		return code_pos_t { .func_id = func_id, .pos = instr - functions[func_id].body.data()};
+		return code_pos_t{.func_id = func_id, .pos = instr - functions[func_id].body.data()};
 	}
 };
 
@@ -477,7 +479,7 @@ struct func_builder_t {
 
 	reg_id_t refer_reg(const std::string &input) {
 		auto held = reg_decl.by_first(input);
-		CORE_ASSERT(held.has_value(), "Using undeclared reguster {}", input);
+		CORE_ASSERT(held.has_value(), "Using undeclared register {}", input);
 		return held.value();
 	}
 
@@ -509,7 +511,7 @@ struct func_builder_t {
 								   .body = built_func_body,
 								   .no_of_args = no_of_args,
 								   .res_size = size_of_result,
-								   .regs = std::vector<bit64>(reg_decl.size()),
+								   .regs = std::vector<unit>(reg_decl.size()),
 							   },
 							   make_debug_data());
 	}
@@ -596,7 +598,7 @@ constexpr std::string regex_func() {
 }
 
 namespace _N_PARSE_UTILS {
-constexpr bit64 parse_arg_t(thread_builder_t &builder, operand_t type, std::string input) {
+constexpr unit parse_arg_t(thread_builder_t &builder, operand_t type, std::string input) {
 	switch (type) {
 	case operand_t::DECIMAL_NUM:
 		return std::stoull(input);
@@ -625,7 +627,7 @@ ENLIST_OPERANDS(STCK_DEINIT)
 ENLIST_OPERANDS(REG_TO_STCK, operand_t::REGISTER_ID)
 ENLIST_OPERANDS(STCK_TO_REG, operand_t::REGISTER_ID)
 ENLIST_OPERANDS(REG_TO_RVAL, operand_t::REGISTER_ID)
-ENLIST_OPERANDS(REG_TO_REG, operand_t::REGISTER_ID, operand_t::REGISTER_ID)
+ENLIST_OPERANDS(REG_FROM_REG, operand_t::REGISTER_ID, operand_t::REGISTER_ID)
 ENLIST_OPERANDS(CMP_REG, operand_t::REGISTER_ID, operand_t::REGISTER_ID)
 ENLIST_OPERANDS(INPUT_TO_REG, operand_t::REGISTER_ID)
 ENLIST_OPERANDS(OUTPUT_REG, operand_t::REGISTER_ID)
@@ -658,7 +660,7 @@ std::unordered_map<std::string, const std::vector<operand_t> &> str_to_arg = {
 	{nameof(REG_TO_STCK), REG_TO_STCK()},
 	{nameof(STCK_TO_REG), STCK_TO_REG()},
 	{nameof(REG_TO_RVAL), REG_TO_RVAL()},
-	{nameof(REG_TO_REG), REG_TO_REG()},
+	{nameof(REG_FROM_REG), REG_FROM_REG()},
 	{nameof(INPUT_TO_REG), INPUT_TO_REG()},
 	{nameof(OUTPUT_REG), OUTPUT_REG()},
 	{nameof(FUNC_RET), FUNC_RET()},
@@ -701,7 +703,7 @@ PARSE_SIMPLE_IMPL(STCK_DEINIT)
 PARSE_SIMPLE_IMPL(REG_TO_STCK)
 PARSE_SIMPLE_IMPL(STCK_TO_REG)
 PARSE_SIMPLE_IMPL(REG_TO_RVAL)
-PARSE_SIMPLE_IMPL(REG_TO_REG)
+PARSE_SIMPLE_IMPL(REG_FROM_REG)
 PARSE_SIMPLE_IMPL(INPUT_TO_REG)
 PARSE_SIMPLE_IMPL(OUTPUT_REG)
 PARSE_SIMPLE_IMPL(FUNC_RET)
@@ -780,7 +782,7 @@ void parse_line(const std::string &line, thread_builder_t &builder) {
 			{nameof(REG_TO_STCK), {make_opcode_pattern(nameof(REG_TO_STCK)), &REG_TO_STCK}},
 			{nameof(STCK_TO_REG), {make_opcode_pattern(nameof(STCK_TO_REG)), &STCK_TO_REG}},
 			{nameof(REG_TO_RVAL), {make_opcode_pattern(nameof(REG_TO_RVAL)), &REG_TO_RVAL}},
-			{nameof(REG_TO_REG), {make_opcode_pattern(nameof(REG_TO_REG)), &REG_TO_REG}},
+			{nameof(REG_FROM_REG), {make_opcode_pattern(nameof(REG_FROM_REG)), &REG_FROM_REG}},
 			{nameof(INPUT_TO_REG), {make_opcode_pattern(nameof(INPUT_TO_REG)), &INPUT_TO_REG}},
 			{nameof(OUTPUT_REG), {make_opcode_pattern(nameof(OUTPUT_REG)), &OUTPUT_REG}},
 			{nameof(EXIT_PROG), {make_opcode_pattern(nameof(EXIT_PROG)), &EXIT_PROG}},
@@ -870,13 +872,13 @@ std::string read_file(std::string file_name) {
 
 //////////////////////////// OPCODE RAW ACTION IMPL ////////////////////////////
 
-INLINE static bit64 *last_on_stck(CONST_RAW_EXEC_ARGS) {
+INLINE static unit *last_on_stck(CONST_RAW_EXEC_ARGS) {
 	CORE_ASSERT(frame->stack_start < frame->stack_head,
 				"Trying to access part of the stack what belongs to other function");
 	return (frame->stack_head - 1);
 }
 
-INLINE static bit64 &get_reg(bit64 arg0, CONST_RAW_EXEC_ARGS) {
+INLINE static unit &get_reg(unit arg0, CONST_RAW_EXEC_ARGS) {
 	auto cur_func = frame->cur_func_id;
 	auto &all_func = *avail_funcs;
 
@@ -912,7 +914,10 @@ _N_EXEC_RAW::ret_t _N_EXEC_RAW::STCK_DEINIT(RAW_EXEC_ARGS) {
 _N_EXEC_RAW::ret_t _N_EXEC_RAW::REG_TO_STCK(RAW_EXEC_ARGS) {
 	auto arg0 = instr->arg[0];
 
-	*last_on_stck(FWD_RAW_ARGS) = get_reg(arg0, FWD_RAW_ARGS);
+	auto &stack_top = *last_on_stck(FWD_RAW_ARGS);
+	auto &reg = get_reg(arg0, FWD_RAW_ARGS);
+
+	stack_top = reg;
 
 	return 1;
 }
@@ -920,16 +925,22 @@ _N_EXEC_RAW::ret_t _N_EXEC_RAW::REG_TO_STCK(RAW_EXEC_ARGS) {
 _N_EXEC_RAW::ret_t _N_EXEC_RAW::STCK_TO_REG(RAW_EXEC_ARGS) {
 	auto arg0 = instr->arg[0];
 
-	get_reg(arg0, FWD_RAW_ARGS) = *last_on_stck(FWD_RAW_ARGS);
+	auto &stack_top = *last_on_stck(FWD_RAW_ARGS);
+	auto &reg = get_reg(arg0, FWD_RAW_ARGS);
+
+	reg = stack_top;
 
 	return 1;
 }
 
-_N_EXEC_RAW::ret_t _N_EXEC_RAW::REG_TO_REG(RAW_EXEC_ARGS) {
+_N_EXEC_RAW::ret_t _N_EXEC_RAW::REG_FROM_REG(RAW_EXEC_ARGS) {
 	auto arg0 = instr->arg[0];
 	auto arg1 = instr->arg[1];
 
-	get_reg(arg1, FWD_RAW_ARGS) = get_reg(arg0, FWD_RAW_ARGS);
+	auto &reg0 = get_reg(arg0, FWD_RAW_ARGS);
+	auto &reg1 = get_reg(arg1, FWD_RAW_ARGS);
+
+	reg0 = reg1;
 
 	return 1;
 }
@@ -937,7 +948,11 @@ _N_EXEC_RAW::ret_t _N_EXEC_RAW::REG_TO_REG(RAW_EXEC_ARGS) {
 _N_EXEC_RAW::ret_t _N_EXEC_RAW::REG_TO_RVAL(RAW_EXEC_ARGS) {
 	auto arg0 = instr->arg[0];
 
-	*frame->stack_start = get_reg(arg0, FWD_RAW_ARGS);
+	auto &stack_bottom = *frame->stack_start;
+	auto &reg = get_reg(arg0, FWD_RAW_ARGS);
+	;
+
+	stack_bottom = reg;
 
 	return 1;
 }
@@ -945,10 +960,12 @@ _N_EXEC_RAW::ret_t _N_EXEC_RAW::REG_TO_RVAL(RAW_EXEC_ARGS) {
 _N_EXEC_RAW::ret_t _N_EXEC_RAW::INPUT_TO_REG(RAW_EXEC_ARGS) {
 	auto arg0 = instr->arg[0];
 
+	auto &reg = get_reg(arg0, FWD_RAW_ARGS);
+
 	size_t val;
 	std::cin >> val;
 
-	get_reg(arg0, FWD_RAW_ARGS) = val;
+	reg = val;
 
 	return 1;
 }
@@ -956,7 +973,9 @@ _N_EXEC_RAW::ret_t _N_EXEC_RAW::INPUT_TO_REG(RAW_EXEC_ARGS) {
 _N_EXEC_RAW::ret_t _N_EXEC_RAW::OUTPUT_REG(RAW_EXEC_ARGS) {
 	auto arg0 = instr->arg[0];
 
-	std::cout << get_reg(arg0, FWD_RAW_ARGS) << std::endl;
+	auto &reg = get_reg(arg0, FWD_RAW_ARGS);
+
+	std::cout << reg << std::endl;
 
 	return 1;
 }
@@ -1034,7 +1053,9 @@ _N_EXEC_RAW::ret_t _N_EXEC_RAW::INIT_IMM(RAW_EXEC_ARGS) {
 	auto arg0 = instr->arg[0];
 	auto arg1 = instr->arg[1];
 
-	get_reg(arg1, FWD_RAW_ARGS) = arg1;
+	auto& reg = get_reg(arg0, FWD_RAW_ARGS);
+
+	reg = arg1;
 
 	return 1;
 }
@@ -1043,7 +1064,11 @@ _N_EXEC_RAW::ret_t _N_EXEC_RAW::ALLOC_HEAP(RAW_EXEC_ARGS) {
 	auto arg0 = instr->arg[0];
 	auto arg1 = instr->arg[1];
 
-	get_reg(arg0, FWD_RAW_ARGS) = mem_space->heap.allocate(get_reg(arg1, FWD_RAW_ARGS));
+	auto &reg0 = get_reg(arg0, FWD_RAW_ARGS);
+	auto &reg1 = get_reg(arg1, FWD_RAW_ARGS);
+
+	auto ptr = mem_space->heap.allocate(reg1);
+	reg0 = ptr;
 
 	return 1;
 }
@@ -1051,7 +1076,9 @@ _N_EXEC_RAW::ret_t _N_EXEC_RAW::ALLOC_HEAP(RAW_EXEC_ARGS) {
 _N_EXEC_RAW::ret_t _N_EXEC_RAW::DEALLOC_HEAP(RAW_EXEC_ARGS) {
 	auto arg0 = instr->arg[0];
 
-	mem_space->heap.deallocate(get_reg(arg0, FWD_RAW_ARGS));
+	auto reg = get_reg(arg0, FWD_RAW_ARGS);
+
+	mem_space->heap.deallocate(reg);
 
 	return 1;
 }
@@ -1060,7 +1087,10 @@ _N_EXEC_RAW::ret_t _N_EXEC_RAW::WRITE_HEAP(RAW_EXEC_ARGS) {
 	auto arg0 = instr->arg[0];
 	auto arg1 = instr->arg[1];
 
-	mem_space->heap.write(get_reg(arg0, FWD_RAW_ARGS), get_reg(arg1, FWD_RAW_ARGS));
+	auto &reg0 = get_reg(arg0, FWD_RAW_ARGS);
+	auto &reg1 = get_reg(arg1, FWD_RAW_ARGS);
+
+	mem_space->heap.write(reg0, reg1);
 
 	return 1;
 }
@@ -1069,7 +1099,10 @@ _N_EXEC_RAW::ret_t _N_EXEC_RAW::READ_HEAP(RAW_EXEC_ARGS) {
 	auto arg0 = instr->arg[0];
 	auto arg1 = instr->arg[1];
 
-	get_reg(arg0, FWD_RAW_ARGS) = mem_space->heap.read(get_reg(arg1, FWD_RAW_ARGS));
+	auto &reg0 = get_reg(arg0, FWD_RAW_ARGS);
+	auto &reg1 = get_reg(arg1, FWD_RAW_ARGS);
+
+	reg0 = mem_space->heap.read(reg1);
 
 	return 1;
 }
@@ -1078,7 +1111,10 @@ _N_EXEC_RAW::ret_t _N_EXEC_RAW::READ_HEAP(RAW_EXEC_ARGS) {
 	_N_EXEC_RAW::ret_t _N_EXEC_RAW::macro(RAW_EXEC_ARGS) {                                         \
 		auto arg0 = instr->arg[0];                                                                 \
 		auto arg1 = instr->arg[1];                                                                 \
-		get_reg(arg0, FWD_RAW_ARGS) oper get_reg(arg1, FWD_RAW_ARGS);                              \
+		auto &reg0 = get_reg(arg0, FWD_RAW_ARGS);                                                  \
+		auto &reg1 = get_reg(arg1, FWD_RAW_ARGS);                                                  \
+                                                                                                   \
+		reg0 oper reg1;                                                                            \
 		return 1;                                                                                  \
 	}
 

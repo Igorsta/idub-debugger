@@ -126,5 +126,10 @@ int main() {
 
 	// element::my_cool_func_name(5);
 
-	factorial(5);
+	// factorial(5);
+	std::string line = "  init_imm $1 1";
+	auto reg = std::regex("\\s*init_imm\\s+\\$([A-Za-z0-9_]+),\\s+(\\d+)\\s*(?:#.*)?");
+	std::smatch matches;
+
+	std::cout << std::regex_match(line, matches, reg) << "\n";
 }

@@ -1,0 +1,8 @@
+fun main(0) -> 0 : {
+	demand_reg $reg
+	init_imm $reg, 32
+	output_reg $reg
+
+	input_reg $reg
+	exit_prog $reg
+}
