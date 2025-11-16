@@ -369,12 +369,12 @@ struct memory_space {
 	const size_t CALL_STACK_SIZE;
 	const size_t HEAP_SIZE;
 
-
 	std::unique_ptr<unit[]> MEM_STACK;
 	std::unique_ptr<frame_t[]> CALL_STACK;
 	heap_t heap;
 
-	memory_space(size_t MEM_STACK_SIZE = 10, size_t CALL_STACK_SIZE = 1000, size_t HEAP_SIZE = 2048) :
+	memory_space(size_t MEM_STACK_SIZE = 10, size_t CALL_STACK_SIZE = 1000,
+				 size_t HEAP_SIZE = 2048) :
 		MEM_STACK_SIZE(MEM_STACK_SIZE),
 		CALL_STACK_SIZE(CALL_STACK_SIZE),
 		HEAP_SIZE(HEAP_SIZE),
@@ -415,8 +415,7 @@ template <exec_mode mode> struct thread_t {
 		}
 	}
 
-	void exec(const instrutction_t *&instr, frame_t *&frame)
-	{
+	void exec(const instrutction_t *&instr, frame_t *&frame) {
 		{
 			instr += instr->action(instr, &memory, frame, &functions);
 		}
@@ -424,8 +423,7 @@ template <exec_mode mode> struct thread_t {
 		MUST_TAIL return exec(instr, frame);
 	}
 
-	void exec(const instrutction_t *&instr, frame_t *&frame, thread_dbg_data_t &dbg)
-	{
+	void exec(const instrutction_t *&instr, frame_t *&frame, thread_dbg_data_t &dbg) {
 		try {
 			instr += instr->action(instr, &memory, frame, &functions);
 		} catch (unit result) {
@@ -872,6 +870,7 @@ std::string read_file(std::string file_name) {
 
 //////////////////////////// OPCODE RAW ACTION IMPL ////////////////////////////
 
+namespace _N_EXEC_UTILS {
 INLINE static unit *last_on_stck(CONST_RAW_EXEC_ARGS) {
 	CORE_ASSERT(frame->stack_start < frame->stack_head,
 				"Trying to access part of the stack what belongs to other function");
@@ -895,6 +894,7 @@ INLINE static unit &get_reg(unit arg0, CONST_RAW_EXEC_ARGS) {
 
 	return function.regs[arg0];
 }
+} // namespace _N_EXEC_UTILS
 
 _N_EXEC_RAW::ret_t _N_EXEC_RAW::STCK_INIT(RAW_EXEC_ARGS) {
 	auto end = mem_space->MEM_STACK.get() + mem_space->MEM_STACK_SIZE;
@@ -906,12 +906,14 @@ _N_EXEC_RAW::ret_t _N_EXEC_RAW::STCK_INIT(RAW_EXEC_ARGS) {
 }
 
 _N_EXEC_RAW::ret_t _N_EXEC_RAW::STCK_DEINIT(RAW_EXEC_ARGS) {
+	using namespace _N_EXEC_UTILS;
 	frame->stack_head = last_on_stck(FWD_RAW_ARGS);
 
 	return 1;
 }
 
 _N_EXEC_RAW::ret_t _N_EXEC_RAW::REG_TO_STCK(RAW_EXEC_ARGS) {
+	using namespace _N_EXEC_UTILS;
 	auto arg0 = instr->arg[0];
 
 	auto &stack_top = *last_on_stck(FWD_RAW_ARGS);
@@ -923,6 +925,8 @@ _N_EXEC_RAW::ret_t _N_EXEC_RAW::REG_TO_STCK(RAW_EXEC_ARGS) {
 }
 
 _N_EXEC_RAW::ret_t _N_EXEC_RAW::STCK_TO_REG(RAW_EXEC_ARGS) {
+	using namespace _N_EXEC_UTILS;
+
 	auto arg0 = instr->arg[0];
 
 	auto &stack_top = *last_on_stck(FWD_RAW_ARGS);
@@ -934,6 +938,8 @@ _N_EXEC_RAW::ret_t _N_EXEC_RAW::STCK_TO_REG(RAW_EXEC_ARGS) {
 }
 
 _N_EXEC_RAW::ret_t _N_EXEC_RAW::REG_FROM_REG(RAW_EXEC_ARGS) {
+	using namespace _N_EXEC_UTILS;
+
 	auto arg0 = instr->arg[0];
 	auto arg1 = instr->arg[1];
 
@@ -946,6 +952,8 @@ _N_EXEC_RAW::ret_t _N_EXEC_RAW::REG_FROM_REG(RAW_EXEC_ARGS) {
 }
 
 _N_EXEC_RAW::ret_t _N_EXEC_RAW::REG_TO_RVAL(RAW_EXEC_ARGS) {
+	using namespace _N_EXEC_UTILS;
+
 	auto arg0 = instr->arg[0];
 
 	auto &stack_bottom = *frame->stack_start;
@@ -958,6 +966,8 @@ _N_EXEC_RAW::ret_t _N_EXEC_RAW::REG_TO_RVAL(RAW_EXEC_ARGS) {
 }
 
 _N_EXEC_RAW::ret_t _N_EXEC_RAW::INPUT_TO_REG(RAW_EXEC_ARGS) {
+	using namespace _N_EXEC_UTILS;
+
 	auto arg0 = instr->arg[0];
 
 	auto &reg = get_reg(arg0, FWD_RAW_ARGS);
@@ -971,6 +981,8 @@ _N_EXEC_RAW::ret_t _N_EXEC_RAW::INPUT_TO_REG(RAW_EXEC_ARGS) {
 }
 
 _N_EXEC_RAW::ret_t _N_EXEC_RAW::OUTPUT_REG(RAW_EXEC_ARGS) {
+	using namespace _N_EXEC_UTILS;
+
 	auto arg0 = instr->arg[0];
 
 	auto &reg = get_reg(arg0, FWD_RAW_ARGS);
@@ -1022,6 +1034,8 @@ _N_EXEC_RAW::ret_t _N_EXEC_RAW::FUNC_RET(RAW_EXEC_ARGS) {
 }
 
 _N_EXEC_RAW::ret_t _N_EXEC_RAW::EXIT_PROG(RAW_EXEC_ARGS) {
+	using namespace _N_EXEC_UTILS;
+
 	auto arg0 = instr->arg[0];
 	auto ret_val = get_reg(arg0, FWD_RAW_ARGS);
 
@@ -1033,6 +1047,8 @@ _N_EXEC_RAW::ret_t _N_EXEC_RAW::EXIT_PROG(RAW_EXEC_ARGS) {
 _N_EXEC_RAW::ret_t _N_EXEC_RAW::JUMP(RAW_EXEC_ARGS) { return instr->arg[0]; }
 
 _N_EXEC_RAW::ret_t _N_EXEC_RAW::CMP_REG(RAW_EXEC_ARGS) {
+	using namespace _N_EXEC_UTILS;
+
 	auto &arg0 = instr->arg[0];
 	auto &arg1 = instr->arg[1];
 
@@ -1050,10 +1066,12 @@ _N_EXEC_RAW::ret_t _N_EXEC_RAW::JUMP_EQ(RAW_EXEC_ARGS) {
 }
 
 _N_EXEC_RAW::ret_t _N_EXEC_RAW::INIT_IMM(RAW_EXEC_ARGS) {
+	using namespace _N_EXEC_UTILS;
+
 	auto arg0 = instr->arg[0];
 	auto arg1 = instr->arg[1];
 
-	auto& reg = get_reg(arg0, FWD_RAW_ARGS);
+	auto &reg = get_reg(arg0, FWD_RAW_ARGS);
 
 	reg = arg1;
 
@@ -1061,6 +1079,8 @@ _N_EXEC_RAW::ret_t _N_EXEC_RAW::INIT_IMM(RAW_EXEC_ARGS) {
 }
 
 _N_EXEC_RAW::ret_t _N_EXEC_RAW::ALLOC_HEAP(RAW_EXEC_ARGS) {
+	using namespace _N_EXEC_UTILS;
+
 	auto arg0 = instr->arg[0];
 	auto arg1 = instr->arg[1];
 
@@ -1074,6 +1094,8 @@ _N_EXEC_RAW::ret_t _N_EXEC_RAW::ALLOC_HEAP(RAW_EXEC_ARGS) {
 }
 
 _N_EXEC_RAW::ret_t _N_EXEC_RAW::DEALLOC_HEAP(RAW_EXEC_ARGS) {
+	using namespace _N_EXEC_UTILS;
+
 	auto arg0 = instr->arg[0];
 
 	auto reg = get_reg(arg0, FWD_RAW_ARGS);
@@ -1084,6 +1106,8 @@ _N_EXEC_RAW::ret_t _N_EXEC_RAW::DEALLOC_HEAP(RAW_EXEC_ARGS) {
 }
 
 _N_EXEC_RAW::ret_t _N_EXEC_RAW::WRITE_HEAP(RAW_EXEC_ARGS) {
+	using namespace _N_EXEC_UTILS;
+
 	auto arg0 = instr->arg[0];
 	auto arg1 = instr->arg[1];
 
@@ -1096,6 +1120,8 @@ _N_EXEC_RAW::ret_t _N_EXEC_RAW::WRITE_HEAP(RAW_EXEC_ARGS) {
 }
 
 _N_EXEC_RAW::ret_t _N_EXEC_RAW::READ_HEAP(RAW_EXEC_ARGS) {
+	using namespace _N_EXEC_UTILS;
+
 	auto arg0 = instr->arg[0];
 	auto arg1 = instr->arg[1];
 
@@ -1109,6 +1135,8 @@ _N_EXEC_RAW::ret_t _N_EXEC_RAW::READ_HEAP(RAW_EXEC_ARGS) {
 
 #define EXEC_ARITH_IN_PLACE_IMPL(macro, oper)                                                      \
 	_N_EXEC_RAW::ret_t _N_EXEC_RAW::macro(RAW_EXEC_ARGS) {                                         \
+		using namespace _N_EXEC_UTILS;                                                             \
+                                                                                                   \
 		auto arg0 = instr->arg[0];                                                                 \
 		auto arg1 = instr->arg[1];                                                                 \
 		auto &reg0 = get_reg(arg0, FWD_RAW_ARGS);                                                  \
