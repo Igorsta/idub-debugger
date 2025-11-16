@@ -313,7 +313,7 @@ void test_reverse_stupid(size_t iterations = TEST_SIZE) {
 		if (i % (iterations / 100) == 0) [[unlikely]]
 			test.print_detail();
 	}
-	auto [end_sub, end, _] = test.get_total();
+	auto [end_sub, end, _2] = test.get_total();
 
 	std::cout << "test_reverse_stupid\n";
 	std::cout << end_sub - start_sub << " " << end - start << "\n";
@@ -326,7 +326,7 @@ void test_reverse_smart(size_t iterations = TEST_SIZE) {
 
 	test.execute_backwrd(iterations / 2);
 
-	auto [end_sub, end, _] = test.get_total();
+	auto [end_sub, end, _2] = test.get_total();
 
 	std::cout << "test_reverse_smart\n";
 	std::cout << end_sub - start_sub << " " << end - start << "\n";

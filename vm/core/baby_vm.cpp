@@ -8,6 +8,7 @@
 #include <optional>
 #include <sys/types.h>
 #include <unordered_map>
+#include "debugger/cli.hpp"
 
 ///////////////////// DECLARATIONS ////////////////////////////
 
@@ -1156,6 +1157,8 @@ EXEC_ARITH_IN_PLACE_IMPL(MOD_IN_PLACE, %=)
 
 int main(int argc, const char *argv[]) {
 	CORE_ASSERT(argc == 3, "the usage: {} [run|debug] <file name>", argv[0]);
+
+	auto el = counter{.value = 10};
 
 	std::string mode = argv[1];
 	std::string file = argv[2];

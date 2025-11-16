@@ -18,10 +18,15 @@ target_include_directories(common_code INTERFACE
 
 file(GLOB_RECURSE MAIN_SOURCES
     CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/vm/src/*.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/vm/*.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/vm/*.hpp"
 )
 
 add_executable(my_vm ${MAIN_SOURCES})
+
+target_include_directories(my_vm PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/vm
+)
 
 target_link_libraries(my_vm PRIVATE common_code)
 

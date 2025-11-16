@@ -11,3 +11,17 @@ target_compile_options(achrono PRIVATE -std=c++23)
 file(GLOB SRC_TIME "src/exec_termination.cpp")
 add_executable(exec_term ${SRC_TIME})
 target_compile_options(exec_term PRIVATE -std=c++23 -O3)
+
+
+file(GLOB_RECURSE MACRO_SOURCES
+    CONFIGURE_DEPENDS
+	"${CMAKE_CURRENT_SOURCE_DIR}/macro_magic/*.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/macro_magic/*.hpp"	
+	"${CMAKE_CURRENT_SOURCE_DIR}/macro_magic/**/*.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/macro_magic/**/*.hpp"
+)
+add_executable(macro_magic ${MACRO_SOURCES})
+
+target_include_directories(macro_magic PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/macro_magic
+)
