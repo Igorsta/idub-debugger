@@ -1,14 +1,16 @@
 #include "defer.h"
 #include "inline.h"
 #include "musttail.h"
+#include "opcodes/macros/definitions.hpp"
 #include <bits/stdc++.h>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <optional>
+#include <print>
 #include <sys/types.h>
+#include <tuple>
 #include <unordered_map>
-#include "debugger/cli.hpp"
 
 ///////////////////// DECLARATIONS ////////////////////////////
 
@@ -21,10 +23,11 @@ struct instrutction_t;
 struct frame_t;
 struct memory_space;
 struct thread_dbg_data_t;
+struct dbg_require_stop;
 
 template <typename T1, typename T2> struct biject_map_t;
 
-template <exec_mode mode = exec_mode::NORMAL> struct thread_t;
+struct thread_t;
 
 struct func_builder_t;
 struct code_pos_t;
@@ -55,6 +58,7 @@ using func_map = std::unordered_map<func_id_t, function_t>;
 
 #define CORE_ASSERT(cond, ...)                                                                     \
 	if (!(cond)) {                                                                                 \
+		std::cout << "[ERROR] ";                                                                   \
 		std::println(__VA_ARGS__);                                                                 \
 		assert(false);                                                                             \
 	}
@@ -64,7 +68,7 @@ using func_map = std::unordered_map<func_id_t, function_t>;
 		[[maybe_unused]] const frame_t *frame, [[maybe_unused]] const func_map *avail_funcs
 
 #define _N_EXEC		  exec
-#define _N_EXEC_RAW	  _N_EXEC::raw
+#define _N_EXEC_RAW	  _N_EXEC
 #define _N_EXEC_UTILS _N_EXEC::utils
 
 namespace _N_EXEC_RAW {
@@ -78,9 +82,9 @@ using func_t = ret_t(RAW_EXEC_ARGS);
 }; // namespace _N_EXEC_RAW
 
 #define _N_PARSE		parse
-#define _N_PARSE_OTHER	_N_PARSE::other
-#define _N_PARSE_SIMPLE _N_PARSE::simple
-#define _N_PARSE_JUMPS	_N_PARSE::jumps
+#define _N_PARSE_OTHER	_N_PARSE
+#define _N_PARSE_SIMPLE _N_PARSE
+#define _N_PARSE_JUMPS	_N_PARSE
 #define _N_PARSE_UTILS	_N_PARSE::utils
 
 namespace _N_PARSE {
@@ -91,32 +95,6 @@ using parse_instr_t = void(PARSE_OPCODE_ARGS);
 }; // namespace _N_PARSE
 
 ///////////////////// OPCODE_MACROS ////////////////////////////
-#define STCK_INIT	 init
-#define STCK_DEINIT	 deinit
-#define REG_TO_STCK	 reg_to_stack
-#define STCK_TO_REG	 stack_to_reg
-#define REG_TO_RVAL	 reg_to_retval
-#define REG_FROM_REG reg_from_reg
-#define INPUT_TO_REG input_reg
-#define OUTPUT_REG	 output_reg
-#define FUNC_RET	 func_return
-#define EXIT_PROG	 exit_prog
-#define CALL		 call_func
-#define LABEL		 label
-#define JUMP		 jump_to
-#define JUMP_EQ		 jump_if_eq
-#define CMP_REG		 cmp_reg
-#define DEMAND_REG	 demand_reg
-#define INIT_IMM	 init_imm
-#define ADD_IN_PLACE add_in_place
-#define MUL_IN_PLACE mul_in_place
-#define SUB_IN_PLACE sub_in_place
-#define MOD_IN_PLACE mod_in_place
-#define DIV_IN_PLACE div_in_place
-#define ALLOC_HEAP	 alloc_heap
-#define DEALLOC_HEAP dealloc_heap
-#define READ_HEAP	 read_heap
-#define WRITE_HEAP	 write_heap
 
 #define _N_ARGS		  args
 #define _N_ARGS_UTILS _N_ARGS::utils
@@ -157,32 +135,8 @@ parse_instr_t DEMAND_REG;
 
 } // namespace _N_PARSE_OTHER
 
-REQUIRED_FOR_SIMPLE(STCK_INIT)
-REQUIRED_FOR_SIMPLE(STCK_DEINIT)
-REQUIRED_FOR_SIMPLE(REG_TO_STCK)
-REQUIRED_FOR_SIMPLE(STCK_TO_REG)
-REQUIRED_FOR_SIMPLE(REG_TO_RVAL)
-REQUIRED_FOR_SIMPLE(REG_FROM_REG)
-REQUIRED_FOR_SIMPLE(INPUT_TO_REG)
-REQUIRED_FOR_SIMPLE(OUTPUT_REG)
-REQUIRED_FOR_SIMPLE(FUNC_RET)
-REQUIRED_FOR_SIMPLE(EXIT_PROG)
-REQUIRED_FOR_SIMPLE(CALL)
-REQUIRED_FOR_SIMPLE(CMP_REG)
-REQUIRED_FOR_SIMPLE(INIT_IMM)
-REQUIRED_FOR_SIMPLE(ALLOC_HEAP)
-REQUIRED_FOR_SIMPLE(DEALLOC_HEAP)
-REQUIRED_FOR_SIMPLE(READ_HEAP)
-REQUIRED_FOR_SIMPLE(WRITE_HEAP)
-
-REQUIRED_FOR_SIMPLE(ADD_IN_PLACE)
-REQUIRED_FOR_SIMPLE(MUL_IN_PLACE)
-REQUIRED_FOR_SIMPLE(DIV_IN_PLACE)
-REQUIRED_FOR_SIMPLE(SUB_IN_PLACE)
-REQUIRED_FOR_SIMPLE(MOD_IN_PLACE)
-
-REQUIRED_FOR_JUMPS(JUMP)
-REQUIRED_FOR_JUMPS(JUMP_EQ)
+APPLY_TO_SIMPLE(REQUIRED_FOR_SIMPLE)
+APPLY_TO_JUMP(REQUIRED_FOR_JUMPS)
 
 ///////////////////// IMPL ////////////////////////////
 
@@ -277,6 +231,13 @@ template <> struct hash<code_pos_t> {
 };
 } // namespace std
 
+#define enforce_stop(code, ...)                                                                    \
+	throw dbg_require_stop{.inform = [= __VA_OPT__(, __VA_ARGS__)]() { code; }};
+
+struct dbg_require_stop {
+	std::function<void()> inform;
+};
+
 struct thread_dbg_data_t {
 
 	struct func_dbg_data_t {
@@ -293,19 +254,18 @@ struct thread_dbg_data_t {
 		return breakpoints.by_second(position);
 	}
 
-	void dbg_cntrl(code_pos_t position, thread_t<exec_mode::DEBUG> &thread) {
-		bool run_cli = false;
+	void stop_exec(code_pos_t position, thread_t &thread) {
 		if (auto breakpoint = hit_breakpoint(position); breakpoint.has_value()) {
-			std::cout << "Just hit a breakpoint!\n";
-			run_cli = true;
-		}
-
-		if (run_cli) [[unlikely]] {
-			cli();
+			enforce_stop(std::println("Hit breakpoint {}", breakpoint.value());)
 		}
 	}
 
-	void cli() { ; }
+	void handle_result(unit res) {
+		if (res != 0 && res != 5318008) {
+			enforce_stop(std::println("Execution returned error-result {}", res);)
+		}
+		throw res;
+	}
 };
 
 struct heap_t {
@@ -386,17 +346,12 @@ struct memory_space {
 	}
 };
 
-template <exec_mode mode> struct thread_t {
+struct thread_t {
 	func_map functions;
 	func_id_t main_id;
 	memory_space memory;
 
-	static thread_dbg_data_t &dummy_dbg_data() {
-		static thread_dbg_data_t dummy;
-		return dummy;
-	}
-
-	void start_execution(thread_dbg_data_t &dbg = dummy_dbg_data()) {
+	auto init() {
 		const instrutction_t *instr = functions.at(main_id).body.data();
 		auto frame = memory.CALL_STACK.get();
 		auto mem = &memory;
@@ -405,14 +360,17 @@ template <exec_mode mode> struct thread_t {
 		frame->stack_start = memory.MEM_STACK.get();
 		frame->cur_func_id = main_id;
 
+		memory.heap.allocated.clear();
+
+		return std::make_tuple(instr, frame);
+	}
+
+	void start_execution() {
+		auto [instr, frame] = init();
 		try {
-			if constexpr (mode == exec_mode::NORMAL) {
-				exec(instr, frame);
-			} else {
-				exec(instr, frame, dbg);
-			}
+			exec(instr, frame);
 		} catch (unit result) {
-			// std::print("Now the VM knows that the program ended with {}\n", result);
+			std::print("The program has ended with a result {}\n", result);
 		}
 	}
 
@@ -424,19 +382,141 @@ template <exec_mode mode> struct thread_t {
 		MUST_TAIL return exec(instr, frame);
 	}
 
-	void exec(const instrutction_t *&instr, frame_t *&frame, thread_dbg_data_t &dbg) {
+	INLINE void exec_single(const instrutction_t *&instr, frame_t *&frame, thread_dbg_data_t &dbg) {
+		dbg.stop_exec(to_pos(instr, frame), *this);
+
 		try {
 			instr += instr->action(instr, &memory, frame, &functions);
 		} catch (unit result) {
-			return;
+			dbg.handle_result(result);
 		}
+	}
+
+	void exec(const instrutction_t *&instr, frame_t *&frame, thread_dbg_data_t &dbg) {
+		exec_single(instr, frame, dbg);
 
 		MUST_TAIL return exec(instr, frame, dbg);
 	}
 
-	code_pos_t get_position(const instrutction_t *&instr, frame_t *&frame) {
+	code_pos_t to_pos(const instrutction_t *const &instr, frame_t *const &frame) {
 		auto func_id = frame->cur_func_id;
-		return code_pos_t{.func_id = func_id, .pos = instr - functions[func_id].body.data()};
+		return code_pos_t{
+			.func_id = func_id,
+			.pos = static_cast<size_t>(instr - functions[func_id].body.data()),
+		};
+	}
+
+	std::string get_input() {
+		static std::string input;
+		std::cout << "(debug) ";
+		std::cin >> input;
+		return input;
+	}
+
+	bool was_undecided() {
+		std::cout << "Program is already running. Are you sure you want to execute this command? (y / n)\n";
+
+		return (get_input() == "y");
+	}
+
+	void start_debug_session(thread_dbg_data_t &dbg) {
+		std::string input;
+		bool running = false;
+		auto [instr, frame] = init();
+
+		while (true) {
+			input = get_input();
+
+			if (input == "run" || input == "r") {
+				if (running && was_undecided()) {
+					continue;
+				}
+
+				std::tie(instr, frame) = init();
+
+				try {
+					exec(instr, frame, dbg);
+				} catch (unit &res) {
+					std::println("program ended normally with {}", res);
+					running = false;
+				} catch (dbg_require_stop &stop) {
+					stop.inform();
+				}
+
+				continue;
+			}
+
+			if (input == "start" || input == "s") {
+				if (running && was_undecided()) {
+					continue;
+				}
+				
+				std::tie(instr, frame) = init();
+				show_pos(instr, frame, dbg);
+
+				continue;
+			}
+
+			if (input == "nexti" || input == "n") {
+				try {
+					exec_single(instr, frame, dbg);
+					show_pos(instr, frame, dbg);
+				} catch (unit res) {
+					std::println("program ended normally with {}", res);
+				} catch (dbg_require_stop &stop) {
+					stop.inform();
+				}
+
+				continue;
+			}
+
+			if (input == "frame") {
+				if (!running) {
+					std::cout << "No program is running\n";
+					continue;
+				}
+
+				show_pos(instr, frame, dbg);
+				continue;
+			}
+
+			if (input == "backtrace" || input == "bt") {
+				if (!running) {
+					std::cout << "No program is running\n";
+					continue;
+				}
+
+				show_call_stack(frame, dbg);
+				continue;
+			}
+
+			if (input == "stop") {
+				running = false;
+				continue;
+			}
+
+			if (input == "quit" || input == "q") {
+				return;
+			}
+		}
+	}
+
+	void show_pos(const instrutction_t* const& instr, frame_t *const &frame, thread_dbg_data_t &dbg, int idx = 0) {
+
+		auto [func_id, pos] = to_pos(instr, frame);
+		auto func_name_opt = dbg.function_names.by_second(func_id);
+		CORE_ASSERT(func_name_opt.has_value())
+		std::println("#{}\tfunc: {} [id: {}]\tintr no: {}", idx, func_name_opt.value(), func_id,
+					 pos);
+	}
+
+	void show_call_stack(frame_t *frame, thread_dbg_data_t &dbg) {
+		auto bottom = memory.CALL_STACK.get();
+		int idx = 0;
+		while (frame >= bottom) {
+			show_pos(frame->instr, frame, dbg, idx);
+			frame--;
+		}
 	}
 };
 
@@ -542,7 +622,7 @@ public:
 		CORE_ASSERT(debug_data.function_names.emplace_first(name, id).first);
 	};
 
-	template <exec_mode MODE> thread_t<MODE> make_thread() {
+	thread_t make_thread() {
 		CORE_ASSERT(func_builder.is_empty(),
 					"Trying to make a thread without having a full-built func");
 		auto el = func_builder.func_decl.by_first(start_func_name);
@@ -623,13 +703,17 @@ constexpr unit parse_arg_t(thread_builder_t &builder, operand_t type, std::strin
 
 ENLIST_OPERANDS(STCK_INIT)
 ENLIST_OPERANDS(STCK_DEINIT)
+
 ENLIST_OPERANDS(REG_TO_STCK, operand_t::REGISTER_ID)
 ENLIST_OPERANDS(STCK_TO_REG, operand_t::REGISTER_ID)
 ENLIST_OPERANDS(REG_TO_RVAL, operand_t::REGISTER_ID)
 ENLIST_OPERANDS(REG_FROM_REG, operand_t::REGISTER_ID, operand_t::REGISTER_ID)
-ENLIST_OPERANDS(CMP_REG, operand_t::REGISTER_ID, operand_t::REGISTER_ID)
+
 ENLIST_OPERANDS(INPUT_TO_REG, operand_t::REGISTER_ID)
 ENLIST_OPERANDS(OUTPUT_REG, operand_t::REGISTER_ID)
+ENLIST_OPERANDS(INIT_IMM, operand_t::REGISTER_ID, operand_t::DECIMAL_NUM)
+
+ENLIST_OPERANDS(CMP_REG, operand_t::REGISTER_ID, operand_t::REGISTER_ID)
 ENLIST_OPERANDS(FUNC_RET)
 ENLIST_OPERANDS(EXIT_PROG, operand_t::REGISTER_ID)
 ENLIST_OPERANDS(CALL, operand_t::FUNC_NAME)
@@ -639,7 +723,6 @@ ENLIST_OPERANDS(JUMP_EQ, operand_t::LABEL_ID)
 
 ENLIST_OPERANDS(LABEL, operand_t::LABEL_ID)
 ENLIST_OPERANDS(DEMAND_REG, operand_t::REGISTER_ID)
-ENLIST_OPERANDS(INIT_IMM, operand_t::REGISTER_ID, operand_t::DECIMAL_NUM)
 
 ENLIST_OPERANDS(ALLOC_HEAP, operand_t::REG_WITH_PTR, operand_t::REGISTER_ID)
 ENLIST_OPERANDS(DEALLOC_HEAP, operand_t::REG_WITH_PTR)
@@ -652,35 +735,11 @@ ENLIST_OPERANDS(DIV_IN_PLACE, operand_t::REGISTER_ID, operand_t::REGISTER_ID)
 ENLIST_OPERANDS(SUB_IN_PLACE, operand_t::REGISTER_ID, operand_t::REGISTER_ID)
 ENLIST_OPERANDS(MOD_IN_PLACE, operand_t::REGISTER_ID, operand_t::REGISTER_ID)
 
+#define NAME_BIND(code) {nameof(code), code()},
+
 namespace _N_ARGS_UTILS {
 std::unordered_map<std::string, const std::vector<operand_t> &> str_to_arg = {
-	{nameof(STCK_INIT), STCK_INIT()},
-	{nameof(STCK_DEINIT), STCK_DEINIT()},
-	{nameof(REG_TO_STCK), REG_TO_STCK()},
-	{nameof(STCK_TO_REG), STCK_TO_REG()},
-	{nameof(REG_TO_RVAL), REG_TO_RVAL()},
-	{nameof(REG_FROM_REG), REG_FROM_REG()},
-	{nameof(INPUT_TO_REG), INPUT_TO_REG()},
-	{nameof(OUTPUT_REG), OUTPUT_REG()},
-	{nameof(FUNC_RET), FUNC_RET()},
-	{nameof(CMP_REG), CMP_REG()},
-	{nameof(EXIT_PROG), EXIT_PROG()},
-	{nameof(CALL), CALL()},
-	{nameof(LABEL), LABEL()},
-	{nameof(JUMP), JUMP()},
-	{nameof(JUMP_EQ), JUMP_EQ()},
-	{nameof(DEMAND_REG), DEMAND_REG()},
-	{nameof(ADD_IN_PLACE), ADD_IN_PLACE()},
-	{nameof(MUL_IN_PLACE), MUL_IN_PLACE()},
-	{nameof(SUB_IN_PLACE), SUB_IN_PLACE()},
-	{nameof(DIV_IN_PLACE), DIV_IN_PLACE()},
-	{nameof(MOD_IN_PLACE), MOD_IN_PLACE()},
-	{nameof(INIT_IMM), INIT_IMM()},
-	{nameof(ALLOC_HEAP), ALLOC_HEAP()},
-	{nameof(DEALLOC_HEAP), DEALLOC_HEAP()},
-	{nameof(READ_HEAP), READ_HEAP()},
-	{nameof(WRITE_HEAP), WRITE_HEAP()},
-};
+	APPLY_TO_ALL(NAME_BIND)};
 
 }; // namespace _N_ARGS_UTILS
 
@@ -697,28 +756,7 @@ std::unordered_map<std::string, const std::vector<operand_t> &> str_to_arg = {
 		builder.func_builder.add_instr(instr);                                                     \
 	}
 
-PARSE_SIMPLE_IMPL(STCK_INIT)
-PARSE_SIMPLE_IMPL(STCK_DEINIT)
-PARSE_SIMPLE_IMPL(REG_TO_STCK)
-PARSE_SIMPLE_IMPL(STCK_TO_REG)
-PARSE_SIMPLE_IMPL(REG_TO_RVAL)
-PARSE_SIMPLE_IMPL(REG_FROM_REG)
-PARSE_SIMPLE_IMPL(INPUT_TO_REG)
-PARSE_SIMPLE_IMPL(OUTPUT_REG)
-PARSE_SIMPLE_IMPL(FUNC_RET)
-PARSE_SIMPLE_IMPL(EXIT_PROG)
-PARSE_SIMPLE_IMPL(CALL)
-PARSE_SIMPLE_IMPL(CMP_REG)
-PARSE_SIMPLE_IMPL(ADD_IN_PLACE)
-PARSE_SIMPLE_IMPL(MUL_IN_PLACE)
-PARSE_SIMPLE_IMPL(SUB_IN_PLACE)
-PARSE_SIMPLE_IMPL(DIV_IN_PLACE)
-PARSE_SIMPLE_IMPL(MOD_IN_PLACE)
-PARSE_SIMPLE_IMPL(INIT_IMM)
-PARSE_SIMPLE_IMPL(ALLOC_HEAP)
-PARSE_SIMPLE_IMPL(DEALLOC_HEAP)
-PARSE_SIMPLE_IMPL(WRITE_HEAP)
-PARSE_SIMPLE_IMPL(READ_HEAP)
+APPLY_TO_SIMPLE(PARSE_SIMPLE_IMPL)
 
 #define PARSE_JUMPS_IMPL(macro)                                                                    \
 	void _N_PARSE_JUMPS::macro(PARSE_OPCODE_ARGS) {                                                \
@@ -739,8 +777,7 @@ PARSE_SIMPLE_IMPL(READ_HEAP)
 		builder.func_builder.add_jump(instr);                                                      \
 	}
 
-PARSE_JUMPS_IMPL(JUMP)
-PARSE_JUMPS_IMPL(JUMP_EQ)
+APPLY_TO_JUMP(PARSE_JUMPS_IMPL)
 
 void _N_PARSE_OTHER::LABEL(PARSE_OPCODE_ARGS) { builder.func_builder.define_labl(matches[1]); }
 void _N_PARSE_OTHER::DEMAND_REG(PARSE_OPCODE_ARGS) { builder.func_builder.define_reg(matches[1]); }
@@ -832,7 +869,7 @@ void parse_line(const std::string &line, thread_builder_t &builder) {
 	CORE_ASSERT(false, "Line \"{}\" could not be parsed", line);
 }
 
-template <exec_mode MODE> thread_t<MODE> file_parse(std::string &content) {
+auto file_parse(std::string &content) {
 	thread_builder_t res{};
 
 	static const std::regex func_re(regex_func());
@@ -851,7 +888,7 @@ template <exec_mode MODE> thread_t<MODE> file_parse(std::string &content) {
 
 	res.validate_prog();
 
-	return res.make_thread<MODE>();
+	return std::make_tuple(res.make_thread(), res.debug_data);
 }
 
 } // namespace _N_PARSE_UTILS
@@ -1040,8 +1077,6 @@ _N_EXEC_RAW::ret_t _N_EXEC_RAW::EXIT_PROG(RAW_EXEC_ARGS) {
 	auto arg0 = instr->arg[0];
 	auto ret_val = get_reg(arg0, FWD_RAW_ARGS);
 
-	std::cout << std::format("program exited with {}\n", ret_val);
-
 	throw ret_val;
 }
 
@@ -1158,20 +1193,17 @@ EXEC_ARITH_IN_PLACE_IMPL(MOD_IN_PLACE, %=)
 int main(int argc, const char *argv[]) {
 	CORE_ASSERT(argc == 3, "the usage: {} [run|debug] <file name>", argv[0]);
 
-	auto el = counter{.value = 10};
-
 	std::string mode = argv[1];
 	std::string file = argv[2];
 	std::string file_content = read_file(file);
 
 	CORE_ASSERT(mode == "run" || mode == "debug", "Received an unknown command {}", mode);
+	auto [program, debug_data] = _N_PARSE_UTILS::file_parse(file_content);
 
 	if (mode == "run") {
-		auto program = _N_PARSE_UTILS::file_parse<exec_mode::NORMAL>(file_content);
 		program.start_execution();
 	} else {
-		auto program = _N_PARSE_UTILS::file_parse<exec_mode::DEBUG>(file_content);
-		program.start_execution();
+		program.start_debug_session(debug_data);
 	}
 
 	return 0;
