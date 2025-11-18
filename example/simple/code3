@@ -1,21 +1,21 @@
 fun main(0) -> 1: {
-	demand_reg $0
-	demand_reg $1
-	demand_reg $2
-	demand_reg $3
-	label START
-	init
-	jump_to LAST	
+	demand_reg $0;
+	demand_reg $1;
+	demand_reg $2;
+	demand_reg $3;
+	label START;
+	init;
+	jump_to LAST;
 
-	input_reg $0	# NONE OF THIS INSTRUCTIONS WILL EVER EXECUTE
-	output_reg $0
-	input_reg $1
-	output_reg $1
-	input_reg $2
-	output_reg $2
+	input_reg $0;	# NONE OF THIS INSTRUCTIONS WILL EVER EXECUTE
+	output_reg $0;
+	input_reg $1;
+	output_reg $1;
+	input_reg $2;
+	output_reg $2;
 
-	label LAST
-	input_reg $3
-	output_reg $3
-	exit_progn $3
+	label LAST;
+	input_reg $3;
+	output_reg $3;
+	exit_prog $3;
 }

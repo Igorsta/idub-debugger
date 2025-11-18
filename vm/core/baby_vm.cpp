@@ -383,6 +383,7 @@ struct thread_t {
 	}
 
 	INLINE void exec_single(const instrutction_t *&instr, frame_t *&frame, thread_dbg_data_t &dbg) {
+		frame->instr = instr;
 		dbg.stop_exec(to_pos(instr, frame), *this);
 
 		try {
@@ -426,6 +427,7 @@ struct thread_t {
 
 		while (true) {
 			input = get_input();
+			std::cout << "[input] " << input << "\n";
 
 			if (input == "run" || input == "r") {
 				if (running && was_undecided()) {
@@ -450,14 +452,20 @@ struct thread_t {
 				if (running && was_undecided()) {
 					continue;
 				}
-				
+
 				std::tie(instr, frame) = init();
+				running = true;
 				show_pos(instr, frame, dbg);
 
 				continue;
 			}
 
 			if (input == "nexti" || input == "n") {
+				if (!running) {
+					std::cout << "No program is running\n";
+					continue;
+				}
+
 				try {
 					exec_single(instr, frame, dbg);
 					show_pos(instr, frame, dbg);
@@ -491,6 +499,11 @@ struct thread_t {
 			}
 
 			if (input == "stop") {
+				if (!running) {
+					std::cout << "No program is running\n";
+					continue;
+				}
+
 				running = false;
 				continue;
 			}
@@ -498,6 +511,8 @@ struct thread_t {
 			if (input == "quit" || input == "q") {
 				return;
 			}
+
+			std::println("unknown command: \"{}\"", input);
 		}
 	}
 
@@ -512,9 +527,9 @@ struct thread_t {
 
 	void show_call_stack(frame_t *frame, thread_dbg_data_t &dbg) {
 		auto bottom = memory.CALL_STACK.get();
-		int idx = 0;
+		auto top = frame;
 		while (frame >= bottom) {
-			show_pos(frame->instr, frame, dbg, idx);
+			show_pos(frame->instr, frame, dbg, top - frame);
 			frame--;
 		}
 	}
@@ -800,6 +815,7 @@ std::regex make_opcode_pattern(std::string op_name) {
 	if (args.size()) {
 		ans.pop_back(); // removing last "," if present
 	}
+	ans += "\\s*;";
 	ans += "\\s*(?:#.*)?"; // komentarze są dozwolone
 
 	return std::regex(ans);
@@ -813,6 +829,7 @@ void parse_line(const std::string &line, thread_builder_t &builder) {
 
 	static const std::unordered_map<std::string, std::pair<std::regex, parse_instr_t *>>
 		str_to_instr = {
+			{"#", {std::regex("\\s*(?:#.*)?"), nop}},
 			{nameof(STCK_INIT), {make_opcode_pattern(nameof(STCK_INIT)), &STCK_INIT}},
 			{nameof(STCK_DEINIT), {make_opcode_pattern(nameof(STCK_DEINIT)), &STCK_DEINIT}},
 			{nameof(REG_TO_STCK), {make_opcode_pattern(nameof(REG_TO_STCK)), &REG_TO_STCK}},
@@ -842,7 +859,6 @@ void parse_line(const std::string &line, thread_builder_t &builder) {
 			{nameof(LABEL), {make_opcode_pattern(nameof(LABEL)), &::_N_PARSE_OTHER::LABEL}},
 			{nameof(DEMAND_REG),
 			 {make_opcode_pattern(nameof(DEMAND_REG)), &::_N_PARSE_OTHER::DEMAND_REG}},
-			{"#", {std::regex("\\s*(?:#.*)?"), nop}},
 		};
 
 	std::stringstream input(line);

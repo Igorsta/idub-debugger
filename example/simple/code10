@@ -1,70 +1,70 @@
 fun main(0) -> 0 : {
-	demand_reg $ext
-	demand_reg $inp
-	demand_reg $inp2
-	demand_reg $res
+	demand_reg $ext;
+	demand_reg $inp;
+	demand_reg $inp2;
+	demand_reg $res;
 
-	input_reg $inp
-	init
-	reg_to_stack $inp
-	input_reg $inp2
-	init
-	reg_to_stack $inp2
-	
-	call_func alloc_array
+	input_reg $inp;
+	init;
+	reg_to_stack $inp;
+	input_reg $inp2;
+	init;
+	reg_to_stack $inp2;
 
-	stack_to_reg $res			#
-	
-	demand_reg $end
-	demand_reg $val
-	demand_reg $1
+	call_func alloc_array;
 
-	reg_from_reg $end, $res
-	add_in_place $end, $inp		# end = res + inp
-	init_imm $1, 1	
+	stack_to_reg $res;			#;
 
-	label LOOP
-	cmp_reg $res, $end			# res == end
-	jump_if_eq END	
-	read_heap $val, [$res] 		# val = *res
-	output_reg $val				# print val
-	add_in_place $res, $1		# ++res
-	jump_to LOOP
+	demand_reg $end;
+	demand_reg $val;
+	demand_reg $1;
 
-	label END
-	exit_prog $ext
+	reg_from_reg $end, $res;
+	add_in_place $end, $inp;		# end = res + inp;
+	init_imm $1, 1;
+
+	label LOOP;
+	cmp_reg $res, $end;			# res == end;
+	jump_if_eq END;
+	read_heap $val, [$res]; 		# val = *res;
+	output_reg $val;				# print val;
+	add_in_place $res, $1;		# ++res;
+	jump_to LOOP;
+
+	label END;
+	exit_prog $ext;
 }
 
 
 fun alloc_array(2) -> 1 : {
-	demand_reg $arg
-	demand_reg $ptr
-	demand_reg $end
-	demand_reg $val
-	demand_reg $step
-	demand_reg $1
+	demand_reg $arg;
+	demand_reg $ptr;
+	demand_reg $end;
+	demand_reg $val;
+	demand_reg $step;
+	demand_reg $1;
 
-	label INIT_REG
-	stack_to_reg $step
-	deinit	
-	stack_to_reg $arg
+	label INIT_REG;
+	stack_to_reg $step;
+	deinit;
+	stack_to_reg $arg;
 
 
-	alloc_heap [$ptr], $arg		# ptr = malloc(arg)
-	reg_to_stack $ptr			# [return ptr]
-	reg_from_reg $end, $ptr
-	add_in_place $end, $arg		# end = ptr + arg
-	init_imm $val, 0 			# val = 0
-	init_imm $1, 1 				# const 1
-	
-	label LOOP
-	cmp_reg $ptr, $end			# ptr == end
-	jump_if_eq END	
-	write_heap [$ptr], $val		# *ptr = val
-	add_in_place $ptr, $1		# ++ptr
-	add_in_place $val, $step	# ++val
-	jump_to LOOP
+	alloc_heap [$ptr], $arg;		# ptr = malloc(arg);
+	reg_to_stack $ptr;			# [return ptr];
+	reg_from_reg $end, $ptr;
+	add_in_place $end, $arg;		# end = ptr + arg;
+	init_imm $val, 0; 			# val = 0;
+	init_imm $1, 1; 				# const 1;
 
-	label END
-	func_return
+	label LOOP;
+	cmp_reg $ptr, $end;			# ptr == end;
+	jump_if_eq END;
+	write_heap [$ptr], $val;		# *ptr = val;
+	add_in_place $ptr, $1;		# ++ptr;
+	add_in_place $val, $step;	# ++val;
+	jump_to LOOP;
+
+	label END;
+	func_return;
 }

@@ -1,36 +1,36 @@
-# NO REGISTER DECLARATION!
+# NO REGISTER DECLARATION!;
 fun main(0): {
-	input_reg $0
-	init
-	init
-	call_func test
-	stack_to_reg $1
-	deinit
-	output_reg $1
-	reg_to_retval $0
-	exit_prog
+	input_reg $0;
+	init;
+	init;
+	call_func test;
+	stack_to_reg $1;
+	deinit;
+	output_reg $1;
+	reg_to_retval $0;
+	exit_prog;
 }
 
 fun test(0): {
-	input_reg $2
-	init
-	reg_to_stack $2
-	input_reg $2
-	init
-	reg_to_stack $2
-	input_reg $2
-	init
-	reg_to_stack $2
-	stack_to_reg $3
-	deinit
-	output_reg $3
-	stack_to_reg $4
-	deinit
-	output_reg $4
-	stack_to_reg $5
-	deinit
-	output_reg $5
-	input_reg $2
-	reg_to_retval $2
-	func_return
+	input_reg $2;
+	init;
+	reg_to_stack $2;
+	input_reg $2;
+	init;
+	reg_to_stack $2;
+	input_reg $2;
+	init;
+	reg_to_stack $2;
+	stack_to_reg $3;
+	deinit;
+	output_reg $3;
+	stack_to_reg $4;
+	deinit;
+	output_reg $4;
+	stack_to_reg $5;
+	deinit;
+	output_reg $5;
+	input_reg $2;
+	reg_to_retval $2;
+	func_return;
 }

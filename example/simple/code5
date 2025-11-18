@@ -1,27 +1,27 @@
 fun main(0) -> 1 : {
-	demand_reg $0
-	demand_reg $1
-	demand_reg $2
-	demand_reg $3
-	demand_reg $4
-	demand_reg $5
-	
-	label START
-	init
-	input_reg $4
-	input_reg $5
-	cmp_reg $4, $5
-	jump_if_eq LAST
-	
-	input_reg $0
-	output_reg $0
-	input_reg $1
-	output_reg $1
-	input_reg $2
-	output_reg $2
+	demand_reg $0;
+	demand_reg $1;
+	demand_reg $2;
+	demand_reg $3;
+	demand_reg $4;
+	demand_reg $5;
 
-	label LAST
-	input_reg $3
-	output_reg $3
-	exit_prog $3
+	label START;
+	init;
+	input_reg $4;
+	input_reg $5;
+	cmp_reg $4, $5;
+	jump_if_eq LAST;
+
+	input_reg $0;
+	output_reg $0;
+	input_reg $1;
+	output_reg $1;
+	input_reg $2;
+	output_reg $2;
+
+	label LAST;
+	input_reg $3;
+	output_reg $3;
+	exit_prog $3;
 }

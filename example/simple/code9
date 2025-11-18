@@ -1,33 +1,32 @@
 fun main(0) -> 0 : {
-	demand_reg $ext
-	demand_reg $inp
-	demand_reg $res
+	demand_reg $ext;
+	demand_reg $inp;
+	demand_reg $res;
 
-	input_reg $inp
-	init
-	reg_to_stack $inp
-	
-	call_func put_on_heap
-	stack_to_reg $res
-	deinit
-	
-	output_reg $res
+	input_reg $inp;
+	init;
+	reg_to_stack $inp;
 
-	exit_prog $ext
+	call_func put_on_heap;
+	stack_to_reg $res;
+	deinit;
+
+	output_reg $res;
+
+	exit_prog $ext;
 }
 
-
 fun put_on_heap(1) -> 1 : {
-	demand_reg $arg
-	demand_reg $2
-	
-	label INIT_REG
-	init_imm $2, 2
-	stack_to_reg $arg
-	
-	label JOB
-	mul_in_place $arg, $2
-	reg_to_stack $arg
+	demand_reg $arg;
+	demand_reg $2;
 
-	func_return
+	label INIT_REG;
+	init_imm $2, 2;
+	stack_to_reg $arg;
+
+	label JOB;
+	mul_in_place $arg, $2;
+	reg_to_stack $arg;
+
+	func_return;
 }

@@ -1,39 +1,39 @@
 fun main(0) -> 0: {
-	demand_reg $0
-	demand_reg $1
-	input_reg $0
-	init
-	call_func test
-	stack_to_reg $1
-	deinit
-	output_reg $1
-	exit_prog $0
+	demand_reg $0;
+	demand_reg $1;
+	input_reg $0;
+	init;
+	call_func test;
+	stack_to_reg $1;
+	deinit;
+	output_reg $1;
+	exit_prog $0;
 }
 
 fun test(1) -> 1: {
-	demand_reg $2
-	demand_reg $3
-	demand_reg $4
-	demand_reg $5
-	input_reg $2
-	init
-	reg_to_stack $2
-	input_reg $2
-	init
-	reg_to_stack $2
-	input_reg $2
-	init
-	reg_to_stack $2
-	stack_to_reg $3
-	deinit
-	output_reg $3
-	stack_to_reg $4
-	deinit
-	output_reg $4
-	stack_to_reg $5
-	deinit
-	output_reg $5
-	input_reg $2
-	reg_to_retval $2
-	func_return
+	demand_reg $2;
+	demand_reg $3;
+	demand_reg $4;
+	demand_reg $5;
+	input_reg $2;
+	init;
+	reg_to_stack $2;
+	input_reg $2;
+	init;
+	reg_to_stack $2;
+	input_reg $2;
+	init;
+	reg_to_stack $2;
+	stack_to_reg $3;
+	deinit;
+	output_reg $3;
+	stack_to_reg $4;
+	deinit;
+	output_reg $4;
+	stack_to_reg $5;
+	deinit;
+	output_reg $5;
+	input_reg $2;
+	reg_to_retval $2;
+	func_return;
 }

@@ -1,11 +1,11 @@
 fun main(0): {
-	input_reg $0
-	init
-	init
-	call_func test			# THERE WAS NO SUCH FUNCTION DEFINED
-	stack_to_reg $1
-	deinit
-	output_reg $1
-	reg_to_retval $0
-	exit_prog
+	input_reg $0;
+	init;
+	init;
+	call_func test;			# THERE WAS NO SUCH FUNCTION DEFINED;
+	stack_to_reg $1;
+	deinit;
+	output_reg $1;
+	reg_to_retval $0;
+	exit_prog;
 }

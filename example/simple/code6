@@ -1,54 +1,54 @@
 fun main(0) -> 1 : {
-	# REGISTER DECLARATION
-	demand_reg $0
-	demand_reg $1
-	demand_reg $2
+	# REGISTER DECLARATION;
+	demand_reg $0;
+	demand_reg $1;
+	demand_reg $2;
 
-	# INPUT OF RETURN VALUE
-	input_reg $0
-	init
-	
-	# INPUT OF 2 VALUES
-	input_reg $1
-	input_reg $2
-	
-	cmp_reg $1, $2
-	jump_if_eq END
-	
-	init
-	call_func test
-	stack_to_reg $1
-	deinit
-	output_reg $1
-	
-	label END
-	exit_prog $0
+	# INPUT OF RETURN VALUE;
+	input_reg $0;
+	init;
+
+	# INPUT OF 2 VALUES;
+	input_reg $1;
+	input_reg $2;
+
+	cmp_reg $1, $2;
+	jump_if_eq END;
+
+	init;
+	call_func test;
+	stack_to_reg $1;
+	deinit;
+	output_reg $1;
+
+	label END;
+	exit_prog $0;
 }
 
 fun test(1) -> 1: {
-	demand_reg $0
-	demand_reg $1
-	demand_reg $2
-	demand_reg $3
-	demand_reg $4
-	demand_reg $5
-	
-	label START
-	input_reg $4
-	input_reg $5
-	cmp_reg $4, $5
-	jump_if_eq END
-	
-	input_reg $0
-	output_reg $0
-	input_reg $1
-	output_reg $1
-	input_reg $2
-	output_reg $2
+	demand_reg $0;
+	demand_reg $1;
+	demand_reg $2;
+	demand_reg $3;
+	demand_reg $4;
+	demand_reg $5;
 
-	label END
-	input_reg $3
-	output_reg $3
-	reg_to_retval $3
-	func_return
+	label START;
+	input_reg $4;
+	input_reg $5;
+	cmp_reg $4, $5;
+	jump_if_eq END;
+
+	input_reg $0;
+	output_reg $0;
+	input_reg $1;
+	output_reg $1;
+	input_reg $2;
+	output_reg $2;
+
+	label END;
+	input_reg $3;
+	output_reg $3;
+	reg_to_retval $3;
+	func_return;
 }
