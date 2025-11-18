@@ -2,9 +2,16 @@
 // together with site CompilerExplorer
 // some of th code was generated/inspired by AI
 #include "musttail.h"
+#include <algorithm>
 #include <bits/stdc++.h>
+#include <cctype>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
+#include <ios>
+#include <limits>
+#include <memory>
+#include <string>
 
 template <std::convertible_to<int>... Args> auto sum(Args... args) { return (args + ...); }
 
@@ -113,6 +120,90 @@ template <EXEC_MODES mode = EXEC_MODES::TAIL> uint64_t factorial(uint64_t n, uin
 	}
 }
 
+struct single {
+	std::function<void()> action;
+
+	single(auto el) : action(el) { action(); }
+};
+
+std::string get_input() {
+	static std::string entire_line;
+	static std::string last = "No previous command";
+	std::string input;
+
+	std::cout << "(debug) ";
+	getline(std::cin, entire_line);
+
+	if (entire_line != "") {
+		std::stringstream cmd_line(entire_line);
+		cmd_line >> input;
+		last = input;
+	}
+
+	std::cout << "[input] " << last << "\n";
+
+	return last;
+}
+
+struct io_handler {
+	std::shared_ptr<std::string> content;
+	int idx;
+
+	io_handler() : idx(0), content(std::make_shared<std::string>("")) {}
+	io_handler(io_handler &) = default;
+	io_handler(io_handler &&) = default;
+
+	void request_non_white() {
+		auto &str = *content.get();
+
+		static std::string buff;
+
+		auto it = str.begin() + idx;
+		it = std::find_if(it, str.end(), [](char c) { return !bool(std::isspace(c)); });
+		idx = it - str.begin();
+		
+		while (idx == str.size()) {
+			getline(std::cin, buff, '\n');
+			str += buff + '\n';
+			it = std::find_if(str.begin() + idx, str.end(), [](char c) { return !bool(std::isspace(c)); });
+			idx = it - str.begin();
+		}
+
+	}
+
+	uint64_t read_num() {
+		request_non_white();
+
+		auto const& str = *content.get();
+		std::string ans = "";
+
+		for (auto it = str.begin() + idx; it != str.end() && std::isdigit(*it); ++it) {
+			ans += *it;
+			idx++;
+		}
+
+
+		return std::stoull(ans);
+	}
+};
+
+io_handler global;
+
+void run() {
+
+	auto numb = global.read_num();
+	std::cout << 2 * numb << "\n";
+
+	return;
+}
+
+void run_2(io_handler& forked) {
+
+	auto numb = forked.read_num();
+	std::cout << 2 * numb << "\n";
+
+	return;
+}
 
 int main() {
 	// std::cout << nameof(STCK_INIT) << '\n';
@@ -127,9 +218,30 @@ int main() {
 	// element::my_cool_func_name(5);
 
 	// factorial(5);
-	std::string line = "  init_imm $1 1";
-	auto reg = std::regex("\\s*init_imm\\s+\\$([A-Za-z0-9_]+),\\s+(\\d+)\\s*(?:#.*)?");
-	std::smatch matches;
+	// std::string line = "  init_imm $1 1";
+	// auto reg = std::regex("\\s*init_imm\\s+\\$([A-Za-z0-9_]+),\\s+(\\d+)\\s*(?:#.*)?");
+	// std::smatch matches;
 
-	std::cout << std::regex_match(line, matches, reg) << "\n";
+	// std::cout << std::regex_match(line, matches, reg) << "\n";
+
+	io_handler copy = global;
+
+	std::string s;
+	while (true) {
+		s = get_input();
+
+		if (s == "r1") {
+			run();
+			continue;
+		}
+		if (s == "r2") {
+			run_2(copy);
+			continue;
+		}
+
+		break;
+	}
+
+
+	return 0;
 }
