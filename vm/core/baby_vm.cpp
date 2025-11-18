@@ -24,6 +24,7 @@ struct frame_t;
 struct memory_space;
 struct thread_dbg_data_t;
 struct dbg_require_stop;
+struct io_handler_t;
 
 template <typename T1, typename T2> struct biject_map_t;
 
@@ -273,7 +274,7 @@ struct heap_t {
 	std::set<std::pair<unit, unit>> allocated;
 	const size_t size;
 
-	heap_t(size_t alloc) :
+	heap_t(size_t alloc = 2048) :
 		content(std::make_unique<unit[]>(alloc)),
 		allocated{},
 		size{alloc} {CORE_ASSERT(content, "Couldn't successfully allocate buffer for heap!")}
@@ -325,6 +326,48 @@ struct heap_t {
 	}
 };
 
+struct io_handler_t {
+	std::shared_ptr<std::string> content;
+	int idx;
+
+	io_handler_t() : idx(0), content(std::make_shared<std::string>("")) {}
+	io_handler_t(io_handler_t &) = default;
+	io_handler_t(io_handler_t &&) = default;
+
+	void request_non_white() {
+		auto &str = *content.get();
+
+		static std::string buff;
+
+		auto it = str.begin() + idx;
+		it = std::find_if(it, str.end(), [](char c) { return !bool(std::isspace(c)); });
+		idx = it - str.begin();
+		
+		while (idx == str.size()) {
+			getline(std::cin, buff, '\n');
+			str += buff + '\n';
+			it = std::find_if(str.begin() + idx, str.end(), [](char c) { return !bool(std::isspace(c)); });
+			idx = it - str.begin();
+		}
+
+	}
+
+	uint64_t read_num() {
+		request_non_white();
+
+		auto const& str = *content.get();
+		std::string ans = "";
+
+		for (auto it = str.begin() + idx; it != str.end() && std::isdigit(*it); ++it) {
+			ans += *it;
+			idx++;
+		}
+
+
+		return std::stoull(ans);
+	}
+};
+
 struct memory_space {
 	const size_t MEM_STACK_SIZE;
 	const size_t CALL_STACK_SIZE;
@@ -333,6 +376,7 @@ struct memory_space {
 	std::unique_ptr<unit[]> MEM_STACK;
 	std::unique_ptr<frame_t[]> CALL_STACK;
 	heap_t heap;
+	io_handler_t io;
 
 	memory_space(size_t MEM_STACK_SIZE = 10, size_t CALL_STACK_SIZE = 1000,
 				 size_t HEAP_SIZE = 2048) :
@@ -340,8 +384,7 @@ struct memory_space {
 		CALL_STACK_SIZE(CALL_STACK_SIZE),
 		HEAP_SIZE(HEAP_SIZE),
 		MEM_STACK(std::make_unique<unit[]>(MEM_STACK_SIZE)),
-		CALL_STACK(std::make_unique<frame_t[]>(CALL_STACK_SIZE)),
-		heap(2048) {
+		CALL_STACK(std::make_unique<frame_t[]>(CALL_STACK_SIZE)) {
 		CORE_ASSERT(MEM_STACK && CALL_STACK, "Couldn't allocate memory and call stacks");
 	}
 };
@@ -351,40 +394,42 @@ struct thread_t {
 	func_id_t main_id;
 	memory_space memory;
 
-	auto init() {
-		const instrutction_t *instr = functions.at(main_id).body.data();
-		auto frame = memory.CALL_STACK.get();
-		auto mem = &memory;
-
+	const instrutction_t *instr;
+	frame_t *frame;
+	bool running = false;
+	
+	auto restart() {
+		instr = functions.at(main_id).body.data();
+		frame = memory.CALL_STACK.get();
+		
 		frame->stack_head = memory.MEM_STACK.get();
 		frame->stack_start = memory.MEM_STACK.get();
 		frame->cur_func_id = main_id;
 
 		memory.heap.allocated.clear();
-
-		return std::make_tuple(instr, frame);
+		return;
 	}
 
 	void start_execution() {
-		auto [instr, frame] = init();
+		restart();
 		try {
-			exec(instr, frame);
+			exec();
 		} catch (unit result) {
 			std::print("The program has ended with a result {}\n", result);
 		}
 	}
 
-	void exec(const instrutction_t *&instr, frame_t *&frame) {
+	void exec() {
 		{
 			instr += instr->action(instr, &memory, frame, &functions);
 		}
 
-		MUST_TAIL return exec(instr, frame);
+		MUST_TAIL return exec();
 	}
 
-	INLINE void exec_single(const instrutction_t *&instr, frame_t *&frame, thread_dbg_data_t &dbg) {
+	INLINE void exec_single(thread_dbg_data_t &dbg) {
 		frame->instr = instr;
-		dbg.stop_exec(to_pos(instr, frame), *this);
+		dbg.stop_exec(to_pos(), *this);
 
 		try {
 			instr += instr->action(instr, &memory, frame, &functions);
@@ -393,17 +438,17 @@ struct thread_t {
 		}
 	}
 
-	void exec(const instrutction_t *&instr, frame_t *&frame, thread_dbg_data_t &dbg) {
-		exec_single(instr, frame, dbg);
+	void exec(thread_dbg_data_t &dbg) {
+		exec_single(dbg);
 
-		MUST_TAIL return exec(instr, frame, dbg);
+		MUST_TAIL return exec(dbg);
 	}
 
-	code_pos_t to_pos(const instrutction_t *const &instr, frame_t *const &frame) {
+	code_pos_t to_pos() const {
 		auto func_id = frame->cur_func_id;
 		return code_pos_t{
 			.func_id = func_id,
-			.pos = static_cast<size_t>(instr - functions[func_id].body.data()),
+			.pos = static_cast<size_t>(instr - functions.at(func_id).body.data()),
 		};
 	}
 
@@ -422,8 +467,7 @@ struct thread_t {
 
 	void start_debug_session(thread_dbg_data_t &dbg) {
 		std::string input;
-		bool running = false;
-		auto [instr, frame] = init();
+		restart();
 
 		while (true) {
 			input = get_input();
@@ -434,10 +478,8 @@ struct thread_t {
 					continue;
 				}
 
-				std::tie(instr, frame) = init();
-
 				try {
-					exec(instr, frame, dbg);
+					exec(dbg);
 				} catch (unit &res) {
 					std::println("program ended normally with {}", res);
 					running = false;
@@ -453,9 +495,9 @@ struct thread_t {
 					continue;
 				}
 
-				std::tie(instr, frame) = init();
+				restart();
 				running = true;
-				show_pos(instr, frame, dbg);
+				show_pos(dbg);
 
 				continue;
 			}
@@ -467,8 +509,8 @@ struct thread_t {
 				}
 
 				try {
-					exec_single(instr, frame, dbg);
-					show_pos(instr, frame, dbg);
+					exec_single(dbg);
+					show_pos(dbg);
 				} catch (unit res) {
 					std::println("program ended normally with {}", res);
 				} catch (dbg_require_stop &stop) {
@@ -484,7 +526,7 @@ struct thread_t {
 					continue;
 				}
 
-				show_pos(instr, frame, dbg);
+				show_pos(dbg);
 				continue;
 			}
 
@@ -494,7 +536,7 @@ struct thread_t {
 					continue;
 				}
 
-				show_call_stack(frame, dbg);
+				show_call_stack(dbg);
 				continue;
 			}
 
@@ -516,20 +558,20 @@ struct thread_t {
 		}
 	}
 
-	void show_pos(const instrutction_t* const& instr, frame_t *const &frame, thread_dbg_data_t &dbg, int idx = 0) {
+	void show_pos(thread_dbg_data_t &dbg, int idx = 0) {
 
-		auto [func_id, pos] = to_pos(instr, frame);
+		auto [func_id, pos] = to_pos();
 		auto func_name_opt = dbg.function_names.by_second(func_id);
 		CORE_ASSERT(func_name_opt.has_value())
 		std::println("#{}\tfunc: {} [id: {}]\tintr no: {}", idx, func_name_opt.value(), func_id,
 					 pos);
 	}
 
-	void show_call_stack(frame_t *frame, thread_dbg_data_t &dbg) {
+	void show_call_stack( thread_dbg_data_t &dbg) {
 		auto bottom = memory.CALL_STACK.get();
 		auto top = frame;
 		while (frame >= bottom) {
-			show_pos(frame->instr, frame, dbg, top - frame);
+			show_pos(dbg, top - frame);
 			frame--;
 		}
 	}
@@ -1026,8 +1068,7 @@ _N_EXEC_RAW::ret_t _N_EXEC_RAW::INPUT_TO_REG(RAW_EXEC_ARGS) {
 
 	auto &reg = get_reg(arg0, FWD_RAW_ARGS);
 
-	size_t val;
-	std::cin >> val;
+	size_t val = mem_space->io.read_num();
 
 	reg = val;
 
