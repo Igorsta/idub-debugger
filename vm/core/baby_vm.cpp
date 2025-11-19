@@ -467,23 +467,27 @@ struct heap_t {
 		return;
 	}
 
-	unit read(unit ptr) {
+	bool is_in_allocated(unit ptr) {
+		if (ptr >= size) {
+			return false;
+		}
 		auto it = allocated.upper_bound({ptr, -1});
 
-		CORE_ASSERT(it != allocated.begin() && (--it)->first <= ptr && ptr < it->first + it->second,
-					"address {} was not allocated", ptr);
-
-		return content[ptr];
+		return (it != allocated.begin() && (--it)->first <= ptr && ptr < it->first + it->second);
 	}
 
-	void write(unit ptr, unit val) {
-		auto it = allocated.upper_bound({ptr, -1});
+	std::optional<unit> read(unit ptr) {
+		return (is_in_allocated(ptr) ? content[ptr] : std::optional<unit>{});
+	}
 
-		CORE_ASSERT(it != allocated.begin() && (--it)->first <= ptr && ptr < it->first + it->second,
-					"address {} was not allocated", ptr);
+	bool write(unit ptr, unit val) {
+		if (!is_in_allocated(ptr)) {
+			return false;
+		}
 
 		content[ptr] = val;
-		return;
+
+		return true;
 	}
 };
 
@@ -601,10 +605,11 @@ struct thread_t {
 			exec_single(instr, frame, dbg);
 
 			if (prnt) {
-				show_pos(instr, frame, dbg);
+				show_pos(instr, frame, dbg, true);
 			}
 		} catch (unit res) {
 			std::println("program ended normally with {}", res);
+			running = false;
 		} catch (dbg_require_stop &stop) {
 			stop.inform();
 		}
@@ -641,7 +646,7 @@ struct thread_t {
 
 				std::tie(instr, frame) = init();
 				running = true;
-				show_pos(instr, frame, dbg);
+				show_pos(instr, frame, dbg, true);
 
 				continue;
 			}
@@ -662,7 +667,7 @@ struct thread_t {
 					continue;
 				}
 
-				show_pos(instr, frame, dbg);
+				show_pos(instr, frame, dbg, true);
 				continue;
 			}
 
@@ -723,28 +728,129 @@ struct thread_t {
 				continue;
 			}
 
+			if (input == "info") {
+				std::string spec;
+				if (!(dbg.cli_io >> spec)) {
+					std::println("expected a specifier to the region you are interested in");
+					continue;
+				}
+
+				if (spec == "locals" || spec == "loc") {
+					show_mem_stack(frame);
+					continue;
+				}
+
+				if (spec == "registers" || spec == "reg") {
+					std::string reg;
+					if (!(dbg.cli_io >> reg)) {
+						reg = "";
+					}
+
+					show_reg(reg, frame, dbg);
+					
+					continue;
+				}
+
+				if (spec == "heap") {
+					unit ptr1, ptr2;
+					if (!((dbg.cli_io >> ptr1) && (dbg.cli_io >> ptr2))) {
+						std::println("expected a range for the heap analysis");
+						continue;
+					}
+
+					show_heap(ptr1, ptr2);
+
+					continue;
+				}
+
+			}
+
 			std::println("unknown command: \"{}\"", input);
 		}
 	}
 
-	void show_pos(const instrutction_t *const &instr, frame_t *const &frame, thread_dbg_data_t &dbg,
+	void show_pos(const instrutction_t *const &instr, frame_t *const &frame, thread_dbg_data_t &dbg, bool detailed = false,
 				  int idx = 0) {
 
-		std::cout << "\n";
-		_N_PRNT_UTILS::dict.at(instr->action)(instr, frame, dbg);
+		if (detailed) {
+			std::cout << "\n";
+			_N_PRNT_UTILS::dict.at(instr->action)(instr, frame, dbg);
+		}
 
 		auto [func_id, pos] = to_pos(instr, frame);
 		auto func_name_opt = dbg.function_names.by_second(func_id);
 		CORE_ASSERT(func_name_opt.has_value())
-		std::println("#{}\tfunc: {} [id: {}]\tintr no: {}", idx, func_name_opt.value(), func_id,
+		std::println("#{:<5} func: {:<15} [id: {:<3}] instr no: {:<8}", idx, func_name_opt.value(), func_id,
 					 pos);
+	}
+
+	void show_mem_stack(frame_t *frame) {
+		unit *bottom = frame->stack_start;
+		unit *top = frame->stack_head;
+
+		while (top > bottom) {
+			top--;
+			std::println("[{:10}]", *top);
+		}
+		return;
+	}
+
+	void show_reg(const std::string& reg, frame_t* frame, thread_dbg_data_t& dbg) {
+		auto func_id = frame->cur_func_id;
+
+		auto it = dbg.func_data.find(func_id);
+		CORE_ASSERT(it != dbg.func_data.end(), "There isn't function with id {} in dbg data", func_id);
+
+		auto it2 = functions.find(func_id);
+		CORE_ASSERT(it2 != functions.end(), "There isn't function with id {} in exec data", func_id);
+
+
+		auto dbg_reg = it->second.registers;
+		auto exec_reg = it2->second.regs;
+
+		if (reg == "") {
+			for (auto [reg_name, reg_id] : dbg_reg.map_1_to_2) {
+				std::println("{:<10}: {:<10}", reg_name, exec_reg[reg_id]);
+			}
+
+			return;
+		}
+
+		auto it3 = dbg_reg.by_first(reg);
+		if (!it3.has_value()) {
+			std::print("There is no \"${}\" register in dbg symbols", reg);
+			return;
+		}
+
+		auto reg_id = it3.value();
+		std::println("{:<10}: {:<10}", reg, exec_reg[reg_id]);
+
+	}
+
+	void show_heap(unit ptr1, unit ptr2) {
+		if (ptr1 >= memory.HEAP_SIZE || ptr2 >= memory.HEAP_SIZE) {
+			std::println("Poiners {:<4} {:<4} are out of bounds - heap is of size {:<4}", ptr1,
+						 ptr2, memory.HEAP_SIZE);
+			return;
+		}
+
+		std::optional<unit> opt;
+		std::string val;
+
+		while (ptr1 <= ptr2) {
+			opt = memory.HEAP.read(ptr1);
+			val = opt.has_value() ? std::to_string(opt.value()) : "#";
+
+			std::println("{:<3} {:<}", ptr1, val);
+			ptr1++;
+		}
 	}
 
 	void show_call_stack(frame_t *frame, thread_dbg_data_t &dbg) {
 		auto bottom = memory.CALL_STACK.get();
 		auto top = frame;
 		while (frame >= bottom) {
-			show_pos(frame->instr, frame, dbg, top - frame);
+			show_pos(frame->instr, frame, dbg, false, top - frame);
 			frame--;
 		}
 	}
@@ -1271,7 +1377,7 @@ _N_EXEC::ret_t _N_EXEC::CALL(RAW_EXEC_ARGS) {
 	auto it = avail_funcs->find(arg0);
 	CORE_ASSERT(it != avail_funcs->end(), "Call to undeclared function");
 
-	frame->instr = instr + 1;
+	frame->instr = instr;
 
 	auto prev_frame = frame;
 	auto frame_end = mem_space->CALL_STACK.get() + mem_space->CALL_STACK_SIZE;
@@ -1304,7 +1410,7 @@ _N_EXEC::ret_t _N_EXEC::FUNC_RET(RAW_EXEC_ARGS) {
 	frame->stack_head = expected_head;
 	instr = frame->instr;
 
-	return 0;
+	return 1;
 }
 
 _N_EXEC::ret_t _N_EXEC::EXIT_PROG(RAW_EXEC_ARGS) {
@@ -1386,7 +1492,7 @@ _N_EXEC::ret_t _N_EXEC::WRITE_HEAP(RAW_EXEC_ARGS) {
 	auto &reg0 = get_reg(arg0, FWD_RAW_ARGS);
 	auto &reg1 = get_reg(arg1, FWD_RAW_ARGS);
 
-	mem_space->HEAP.write(reg0, reg1);
+	CORE_ASSERT(mem_space->HEAP.write(reg0, reg1), "Unsuccessful write to heap");
 
 	return 1;
 }
@@ -1400,7 +1506,9 @@ _N_EXEC::ret_t _N_EXEC::READ_HEAP(RAW_EXEC_ARGS) {
 	auto &reg0 = get_reg(arg0, FWD_RAW_ARGS);
 	auto &reg1 = get_reg(arg1, FWD_RAW_ARGS);
 
-	reg0 = mem_space->HEAP.read(reg1);
+	auto opt = mem_space->HEAP.read(reg1);
+	CORE_ASSERT(opt.has_value(), "Accessing a forbidden part of heap {}", reg1);
+	reg0 = opt.value();
 
 	return 1;
 }
