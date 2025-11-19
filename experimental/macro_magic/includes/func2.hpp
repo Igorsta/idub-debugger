@@ -1,3 +1,4 @@
+#pragma once
 #include "definitions/func2.hpp"
 
 namespace n1 {

@@ -145,41 +145,41 @@ std::string get_input() {
 	return last;
 }
 
-struct io_handler {
-	std::shared_ptr<std::string> content;
-	int idx;
+struct io_handler_t {
+	std::shared_ptr<std::string> entire_content;
+	int pos;
 
-	io_handler() : idx(0), content(std::make_shared<std::string>("")) {}
-	io_handler(io_handler &) = default;
-	io_handler(io_handler &&) = default;
+	io_handler_t() : pos(0), entire_content(std::make_shared<std::string>("")) {}
+	io_handler_t(io_handler_t &) = default;
+	io_handler_t(io_handler_t &&) = default;
 
-	void request_non_white() {
-		auto &str = *content.get();
+	void request_nonwhite_line() {
+		auto &str = *entire_content.get();
 
 		static std::string buff;
 
-		auto it = str.begin() + idx;
+		auto it = str.begin() + pos;
 		it = std::find_if(it, str.end(), [](char c) { return !bool(std::isspace(c)); });
-		idx = it - str.begin();
+		pos = it - str.begin();
 		
-		while (idx == str.size()) {
+		while (pos == str.size()) {
 			getline(std::cin, buff, '\n');
 			str += buff + '\n';
-			it = std::find_if(str.begin() + idx, str.end(), [](char c) { return !bool(std::isspace(c)); });
-			idx = it - str.begin();
+			it = std::find_if(str.begin() + pos, str.end(), [](char c) { return !bool(std::isspace(c)); });
+			pos = it - str.begin();
 		}
 
 	}
 
 	uint64_t read_num() {
-		request_non_white();
+		request_nonwhite_line();
 
-		auto const& str = *content.get();
+		auto const& str = *entire_content.get();
 		std::string ans = "";
 
-		for (auto it = str.begin() + idx; it != str.end() && std::isdigit(*it); ++it) {
+		for (auto it = str.begin() + pos; it != str.end() && std::isdigit(*it); ++it) {
 			ans += *it;
-			idx++;
+			pos++;
 		}
 
 
@@ -187,7 +187,7 @@ struct io_handler {
 	}
 };
 
-io_handler global;
+io_handler_t global;
 
 void run() {
 
@@ -197,7 +197,7 @@ void run() {
 	return;
 }
 
-void run_2(io_handler& forked) {
+void run_2(io_handler_t& forked) {
 
 	auto numb = forked.read_num();
 	std::cout << 2 * numb << "\n";
@@ -224,7 +224,7 @@ int main() {
 
 	// std::cout << std::regex_match(line, matches, reg) << "\n";
 
-	io_handler copy = global;
+	io_handler_t copy = global;
 
 	std::string s;
 	while (true) {

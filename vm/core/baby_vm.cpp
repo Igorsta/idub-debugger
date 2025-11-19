@@ -35,6 +35,7 @@ struct thread_builder_t;
 struct function_t;
 struct flag_data;
 enum class operand_t;
+struct io_handler_t;
 
 ///////////////////// USINGS ////////////////////////////
 
@@ -68,10 +69,9 @@ using func_map = std::unordered_map<func_id_t, function_t>;
 		[[maybe_unused]] const frame_t *frame, [[maybe_unused]] const func_map *avail_funcs
 
 #define _N_EXEC		  exec
-#define _N_EXEC_RAW	  _N_EXEC
 #define _N_EXEC_UTILS _N_EXEC::utils
 
-namespace _N_EXEC_RAW {
+namespace _N_EXEC {
 #define RAW_EXEC_ARGS                                                                              \
 	[[maybe_unused]] const instrutction_t *&instr, [[maybe_unused]] memory_space *mem_space,       \
 		[[maybe_unused]] frame_t *&frame, [[maybe_unused]] func_map *avail_funcs
@@ -79,12 +79,9 @@ namespace _N_EXEC_RAW {
 using ret_t = std::ptrdiff_t;
 using func_t = ret_t(RAW_EXEC_ARGS);
 
-}; // namespace _N_EXEC_RAW
+}; // namespace _N_EXEC
 
 #define _N_PARSE		parse
-#define _N_PARSE_OTHER	_N_PARSE
-#define _N_PARSE_SIMPLE _N_PARSE
-#define _N_PARSE_JUMPS	_N_PARSE
 #define _N_PARSE_UTILS	_N_PARSE::utils
 
 namespace _N_PARSE {
@@ -103,7 +100,7 @@ using parse_instr_t = void(PARSE_OPCODE_ARGS);
 #define nameof(x)	 STRINGIFY(x)
 
 #define REQUIRED_FOR_EXEC(macro)                                                                   \
-	namespace _N_EXEC_RAW {                                                                        \
+	namespace _N_EXEC {                                                                        \
 	INLINE func_t macro;                                                                           \
 	}
 
@@ -115,25 +112,25 @@ using parse_instr_t = void(PARSE_OPCODE_ARGS);
 #define REQUIRED_FOR_SIMPLE(macro)                                                                 \
 	REQUIRED_FOR_EXEC(macro)                                                                       \
 	REQUIRE_ARGS(macro)                                                                            \
-	namespace _N_PARSE_SIMPLE {                                                                    \
+	namespace _N_PARSE {                                                                    \
 	parse_instr_t macro;                                                                           \
 	}
 
 #define REQUIRED_FOR_JUMPS(macro)                                                                  \
 	REQUIRED_FOR_EXEC(macro)                                                                       \
 	REQUIRE_ARGS(macro)                                                                            \
-	namespace _N_PARSE_JUMPS {                                                                     \
+	namespace _N_PARSE {                                                                     \
 	parse_instr_t macro;                                                                           \
 	}
 
 REQUIRE_ARGS(LABEL)
 REQUIRE_ARGS(DEMAND_REG)
-REQUIRE_ARGS(INIT_IMM)
-namespace _N_PARSE_OTHER {
+
+namespace _N_PARSE {
 parse_instr_t LABEL;
 parse_instr_t DEMAND_REG;
 
-} // namespace _N_PARSE_OTHER
+} // namespace _N_PARSE
 
 APPLY_TO_SIMPLE(REQUIRED_FOR_SIMPLE)
 APPLY_TO_JUMP(REQUIRED_FOR_JUMPS)
@@ -142,10 +139,10 @@ APPLY_TO_JUMP(REQUIRED_FOR_JUMPS)
 
 struct instrutction_t {
 	constexpr static size_t args_per_instr = 2;
-	_N_EXEC_RAW::func_t *action;
+	_N_EXEC::func_t *action;
 	unit arg[args_per_instr];
 
-	instrutction_t(_N_EXEC_RAW::func_t *action) : action{action} {
+	instrutction_t(_N_EXEC::func_t *action) : action{action} {
 		for (int i = 0; i < args_per_instr; i++) {
 			arg[i] = 0;
 		}
@@ -238,6 +235,144 @@ struct dbg_require_stop {
 	std::function<void()> inform;
 };
 
+
+struct io_handler_t {
+	enum class INPUT_INTERFACE {
+		SINGLE_LINE_OR_PREV,
+		UNTILL_SUCCESS,
+	};
+
+	INPUT_INTERFACE state;
+	std::shared_ptr<std::string> entire_content;
+	std::vector<std::string> last_nonwhite_lines;
+
+	std::stringstream stream;
+	std::streampos stream_start;
+	int last_content_size = 0;
+
+	bool was_line = false;
+	bool success = false;
+
+	io_handler_t(INPUT_INTERFACE mode) :
+		entire_content(std::make_shared<std::string>("")),
+		state(mode) {}
+
+	io_handler_t(io_handler_t &oth) :
+		state{oth.state},
+		last_nonwhite_lines{oth.last_nonwhite_lines},
+		entire_content{oth.entire_content},
+		stream{*oth.entire_content.get()},
+		stream_start(stream.tellg()) {
+		stream.ignore(oth.stream.tellg() - oth.stream_start);
+	}
+
+	io_handler_t(io_handler_t &&) = default;
+
+	static bool all_white(const std::string &str) {
+		return std::all_of(str.begin(), str.end(), [](char c) { return bool(std::isspace(c)); });
+	}
+
+	void get_common_line(std::string &line_buf, char delim = '\n') {
+		auto &str = *entire_content.get();
+
+		if (str.size() == last_content_size) {
+			CORE_ASSERT(std::getline(std::cin, line_buf, delim), "Expeected a line");
+			line_buf += delim;
+			str += line_buf;
+			last_content_size = str.size();
+
+			return;
+		}
+
+		std::string tmp = "";
+
+		while (last_content_size < str.size()) {
+			char c = str[last_content_size++];
+
+			tmp += c;
+			if (c == delim) {
+				break;
+			}
+		}
+
+		line_buf = tmp;
+	}
+
+	void handle_single_line(auto &elem) {
+		if (was_line == true) {
+			success = false;
+			return;
+		}
+
+		std::string tmp;
+		get_common_line(tmp);
+		was_line = true;
+
+		if (!all_white(tmp)) {
+			last_nonwhite_lines.push_back(tmp);
+		}
+
+		if (last_nonwhite_lines.empty()) {
+			success = false;
+			return;
+		}
+
+		stream.clear();
+		stream.str(last_nonwhite_lines.back());
+
+		success = bool(stream >> elem);
+	}
+
+	void handle_until_success(auto &elem) {
+		if (stream >> elem) {
+			success = true;
+			return;
+		}
+
+		std::string tmp;
+		while (!(stream >> elem)) {
+			if (!stream.eof()) {
+				success = false;
+				return;
+			}
+
+			get_common_line(tmp);
+
+			stream.clear();
+			stream.str(tmp);
+		}
+		last_nonwhite_lines.push_back(tmp);
+		success = true;
+	}
+
+	io_handler_t &operator>>(auto &elem) {
+		success = false;
+		if (stream >> elem) {
+			success = true;
+			return *this;
+		}
+
+		switch (state) {
+		case INPUT_INTERFACE::SINGLE_LINE_OR_PREV:
+			handle_single_line(elem);
+			break;
+		case INPUT_INTERFACE::UNTILL_SUCCESS:
+			handle_until_success(elem);
+			break;
+		}
+
+		return *this;
+	}
+
+	void discard_remaining() {
+		stream.clear();
+		stream.str("");
+		was_line = false;
+	}
+
+	operator bool() const { return success; }
+};
+
 struct thread_dbg_data_t {
 
 	struct func_dbg_data_t {
@@ -249,6 +384,7 @@ struct thread_dbg_data_t {
 	std::unordered_map<func_id_t, func_dbg_data_t> func_data;
 	biject_map_t<breakpoints_id, code_pos_t> breakpoints;
 	func_id_map function_names;
+	io_handler_t cli_io{io_handler_t::INPUT_INTERFACE::SINGLE_LINE_OR_PREV};
 
 	std::optional<breakpoints_id> hit_breakpoint(const code_pos_t &position) {
 		return breakpoints.by_second(position);
@@ -332,7 +468,8 @@ struct memory_space {
 
 	std::unique_ptr<unit[]> MEM_STACK;
 	std::unique_ptr<frame_t[]> CALL_STACK;
-	heap_t heap;
+	heap_t HEAP;
+	io_handler_t IO;
 
 	memory_space(size_t MEM_STACK_SIZE = 10, size_t CALL_STACK_SIZE = 1000,
 				 size_t HEAP_SIZE = 2048) :
@@ -341,7 +478,9 @@ struct memory_space {
 		HEAP_SIZE(HEAP_SIZE),
 		MEM_STACK(std::make_unique<unit[]>(MEM_STACK_SIZE)),
 		CALL_STACK(std::make_unique<frame_t[]>(CALL_STACK_SIZE)),
-		heap(2048) {
+		HEAP(2048),
+		IO(io_handler_t::INPUT_INTERFACE::UNTILL_SUCCESS)
+		{
 		CORE_ASSERT(MEM_STACK && CALL_STACK, "Couldn't allocate memory and call stacks");
 	}
 };
@@ -350,6 +489,8 @@ struct thread_t {
 	func_map functions;
 	func_id_t main_id;
 	memory_space memory;
+	
+	bool running = false;
 
 	auto init() {
 		const instrutction_t *instr = functions.at(main_id).body.data();
@@ -360,7 +501,7 @@ struct thread_t {
 		frame->stack_start = memory.MEM_STACK.get();
 		frame->cur_func_id = main_id;
 
-		memory.heap.allocated.clear();
+		memory.HEAP.allocated.clear();
 
 		return std::make_tuple(instr, frame);
 	}
@@ -407,49 +548,65 @@ struct thread_t {
 		};
 	}
 
-	std::string get_input() {
-		static std::string input;
-		std::cout << "(debug) ";
-		std::cin >> input;
-		return input;
+	bool was_undecided(thread_dbg_data_t &dbg) {
+		std::cout << "Program is already running. Are you sure you want to execute this command? (y / n)\n";
+		char ans;
+		dbg.cli_io >> ans;
+		return (ans == 'y');
 	}
 
-	bool was_undecided() {
-		std::cout << "Program is already running. Are you sure you want to execute this command? (y / n)\n";
+	void handle_run(const instrutction_t* instr, frame_t* frame, thread_dbg_data_t &dbg) {
+		if (running && was_undecided(dbg)) {
+			return;
+		}
 
-		return (get_input() == "y");
+		std::tie(instr, frame) = init();
+
+		try {
+			exec(instr, frame, dbg);
+		} catch (unit &res) {
+			std::println("program ended normally with {}", res);
+			running = false;
+		} catch (dbg_require_stop &stop) {
+			stop.inform();
+		}
+	}
+
+	void handle_next(const instrutction_t* instr, frame_t* frame, thread_dbg_data_t &dbg) {
+		if (!running) {
+			std::cout << "No program is running\n";
+			return;
+		}
+
+		try {
+			exec_single(instr, frame, dbg);
+			show_pos(instr, frame, dbg);
+		} catch (unit res) {
+			std::println("program ended normally with {}", res);
+		} catch (dbg_require_stop &stop) {
+			stop.inform();
+		}
+
 	}
 
 	void start_debug_session(thread_dbg_data_t &dbg) {
 		std::string input;
-		bool running = false;
 		auto [instr, frame] = init();
 
 		while (true) {
-			input = get_input();
+
+			dbg.cli_io.discard_remaining();
+			std::cout << "(debug) ";
+			dbg.cli_io >> input;
 			std::cout << "[input] " << input << "\n";
 
 			if (input == "run" || input == "r") {
-				if (running && was_undecided()) {
-					continue;
-				}
-
-				std::tie(instr, frame) = init();
-
-				try {
-					exec(instr, frame, dbg);
-				} catch (unit &res) {
-					std::println("program ended normally with {}", res);
-					running = false;
-				} catch (dbg_require_stop &stop) {
-					stop.inform();
-				}
-
+				handle_run(instr, frame, dbg);
 				continue;
 			}
 
 			if (input == "start" || input == "s") {
-				if (running && was_undecided()) {
+				if (running && was_undecided(dbg)) {
 					continue;
 				}
 
@@ -461,20 +618,7 @@ struct thread_t {
 			}
 
 			if (input == "nexti" || input == "n") {
-				if (!running) {
-					std::cout << "No program is running\n";
-					continue;
-				}
-
-				try {
-					exec_single(instr, frame, dbg);
-					show_pos(instr, frame, dbg);
-				} catch (unit res) {
-					std::println("program ended normally with {}", res);
-				} catch (dbg_require_stop &stop) {
-					stop.inform();
-				}
-
+				handle_next(instr, frame, dbg);
 				continue;
 			}
 
@@ -761,8 +905,8 @@ std::unordered_map<std::string, const std::vector<operand_t> &> str_to_arg = {
 //////////////////////////// PARSE SIMPLE OPCODE IMPL ////////////////////////////
 
 #define PARSE_SIMPLE_IMPL(macro)                                                                   \
-	void _N_PARSE_SIMPLE::macro(PARSE_OPCODE_ARGS) {                                               \
-		instrutction_t instr{&::_N_EXEC_RAW::macro};                                               \
+	void _N_PARSE::macro(PARSE_OPCODE_ARGS) {                                               \
+		instrutction_t instr{&::_N_EXEC::macro};                                               \
                                                                                                    \
 		const auto &args = ::_N_ARGS::macro();                                                     \
 		for (int i = 0; i < args.size(); i++) {                                                    \
@@ -774,8 +918,8 @@ std::unordered_map<std::string, const std::vector<operand_t> &> str_to_arg = {
 APPLY_TO_SIMPLE(PARSE_SIMPLE_IMPL)
 
 #define PARSE_JUMPS_IMPL(macro)                                                                    \
-	void _N_PARSE_JUMPS::macro(PARSE_OPCODE_ARGS) {                                                \
-		instrutction_t instr{&::_N_EXEC_RAW::macro};                                               \
+	void _N_PARSE::macro(PARSE_OPCODE_ARGS) {                                                \
+		instrutction_t instr{&::_N_EXEC::macro};                                               \
                                                                                                    \
 		int other_idx = 1;                                                                         \
 		const auto &args = ::_N_ARGS::macro();                                                     \
@@ -794,8 +938,8 @@ APPLY_TO_SIMPLE(PARSE_SIMPLE_IMPL)
 
 APPLY_TO_JUMP(PARSE_JUMPS_IMPL)
 
-void _N_PARSE_OTHER::LABEL(PARSE_OPCODE_ARGS) { builder.func_builder.define_labl(matches[1]); }
-void _N_PARSE_OTHER::DEMAND_REG(PARSE_OPCODE_ARGS) { builder.func_builder.define_reg(matches[1]); }
+void _N_PARSE::LABEL(PARSE_OPCODE_ARGS) { builder.func_builder.define_labl(matches[1]); }
+void _N_PARSE::DEMAND_REG(PARSE_OPCODE_ARGS) { builder.func_builder.define_reg(matches[1]); }
 
 namespace _N_PARSE_UTILS {
 void nop(PARSE_OPCODE_ARGS) { return; }
@@ -823,7 +967,7 @@ std::regex make_opcode_pattern(std::string op_name) {
 
 void parse_line(const std::string &line, thread_builder_t &builder) {
 
-	using namespace ::_N_PARSE_SIMPLE;
+	using namespace ::_N_PARSE;
 	using _N_PARSE_UTILS::make_opcode_pattern;
 	using _N_PARSE_UTILS::nop;
 
@@ -854,11 +998,11 @@ void parse_line(const std::string &line, thread_builder_t &builder) {
 			{nameof(WRITE_HEAP), {make_opcode_pattern(nameof(WRITE_HEAP)), &WRITE_HEAP}},
 			{nameof(READ_HEAP), {make_opcode_pattern(nameof(READ_HEAP)), &READ_HEAP}},
 
-			{nameof(JUMP), {make_opcode_pattern(nameof(JUMP)), &::_N_PARSE_JUMPS::JUMP}},
-			{nameof(JUMP_EQ), {make_opcode_pattern(nameof(JUMP_EQ)), &::_N_PARSE_JUMPS::JUMP_EQ}},
-			{nameof(LABEL), {make_opcode_pattern(nameof(LABEL)), &::_N_PARSE_OTHER::LABEL}},
+			{nameof(JUMP), {make_opcode_pattern(nameof(JUMP)), &JUMP}},
+			{nameof(JUMP_EQ), {make_opcode_pattern(nameof(JUMP_EQ)), &JUMP_EQ}},
+			{nameof(LABEL), {make_opcode_pattern(nameof(LABEL)), &LABEL}},
 			{nameof(DEMAND_REG),
-			 {make_opcode_pattern(nameof(DEMAND_REG)), &::_N_PARSE_OTHER::DEMAND_REG}},
+			 {make_opcode_pattern(nameof(DEMAND_REG)), &DEMAND_REG}},
 		};
 
 	std::stringstream input(line);
@@ -950,7 +1094,7 @@ INLINE static unit &get_reg(unit arg0, CONST_RAW_EXEC_ARGS) {
 }
 } // namespace _N_EXEC_UTILS
 
-_N_EXEC_RAW::ret_t _N_EXEC_RAW::STCK_INIT(RAW_EXEC_ARGS) {
+_N_EXEC::ret_t _N_EXEC::STCK_INIT(RAW_EXEC_ARGS) {
 	auto end = mem_space->MEM_STACK.get() + mem_space->MEM_STACK_SIZE;
 	CORE_ASSERT(frame->stack_head + 1 < end, "Stack overflow");
 
@@ -959,14 +1103,14 @@ _N_EXEC_RAW::ret_t _N_EXEC_RAW::STCK_INIT(RAW_EXEC_ARGS) {
 	return 1;
 }
 
-_N_EXEC_RAW::ret_t _N_EXEC_RAW::STCK_DEINIT(RAW_EXEC_ARGS) {
+_N_EXEC::ret_t _N_EXEC::STCK_DEINIT(RAW_EXEC_ARGS) {
 	using namespace _N_EXEC_UTILS;
 	frame->stack_head = last_on_stck(FWD_RAW_ARGS);
 
 	return 1;
 }
 
-_N_EXEC_RAW::ret_t _N_EXEC_RAW::REG_TO_STCK(RAW_EXEC_ARGS) {
+_N_EXEC::ret_t _N_EXEC::REG_TO_STCK(RAW_EXEC_ARGS) {
 	using namespace _N_EXEC_UTILS;
 	auto arg0 = instr->arg[0];
 
@@ -978,7 +1122,7 @@ _N_EXEC_RAW::ret_t _N_EXEC_RAW::REG_TO_STCK(RAW_EXEC_ARGS) {
 	return 1;
 }
 
-_N_EXEC_RAW::ret_t _N_EXEC_RAW::STCK_TO_REG(RAW_EXEC_ARGS) {
+_N_EXEC::ret_t _N_EXEC::STCK_TO_REG(RAW_EXEC_ARGS) {
 	using namespace _N_EXEC_UTILS;
 
 	auto arg0 = instr->arg[0];
@@ -991,7 +1135,7 @@ _N_EXEC_RAW::ret_t _N_EXEC_RAW::STCK_TO_REG(RAW_EXEC_ARGS) {
 	return 1;
 }
 
-_N_EXEC_RAW::ret_t _N_EXEC_RAW::REG_FROM_REG(RAW_EXEC_ARGS) {
+_N_EXEC::ret_t _N_EXEC::REG_FROM_REG(RAW_EXEC_ARGS) {
 	using namespace _N_EXEC_UTILS;
 
 	auto arg0 = instr->arg[0];
@@ -1005,7 +1149,7 @@ _N_EXEC_RAW::ret_t _N_EXEC_RAW::REG_FROM_REG(RAW_EXEC_ARGS) {
 	return 1;
 }
 
-_N_EXEC_RAW::ret_t _N_EXEC_RAW::REG_TO_RVAL(RAW_EXEC_ARGS) {
+_N_EXEC::ret_t _N_EXEC::REG_TO_RVAL(RAW_EXEC_ARGS) {
 	using namespace _N_EXEC_UTILS;
 
 	auto arg0 = instr->arg[0];
@@ -1019,7 +1163,7 @@ _N_EXEC_RAW::ret_t _N_EXEC_RAW::REG_TO_RVAL(RAW_EXEC_ARGS) {
 	return 1;
 }
 
-_N_EXEC_RAW::ret_t _N_EXEC_RAW::INPUT_TO_REG(RAW_EXEC_ARGS) {
+_N_EXEC::ret_t _N_EXEC::INPUT_TO_REG(RAW_EXEC_ARGS) {
 	using namespace _N_EXEC_UTILS;
 
 	auto arg0 = instr->arg[0];
@@ -1027,14 +1171,14 @@ _N_EXEC_RAW::ret_t _N_EXEC_RAW::INPUT_TO_REG(RAW_EXEC_ARGS) {
 	auto &reg = get_reg(arg0, FWD_RAW_ARGS);
 
 	size_t val;
-	std::cin >> val;
+	(mem_space->IO) >> val;
 
 	reg = val;
 
 	return 1;
 }
 
-_N_EXEC_RAW::ret_t _N_EXEC_RAW::OUTPUT_REG(RAW_EXEC_ARGS) {
+_N_EXEC::ret_t _N_EXEC::OUTPUT_REG(RAW_EXEC_ARGS) {
 	using namespace _N_EXEC_UTILS;
 
 	auto arg0 = instr->arg[0];
@@ -1046,7 +1190,7 @@ _N_EXEC_RAW::ret_t _N_EXEC_RAW::OUTPUT_REG(RAW_EXEC_ARGS) {
 	return 1;
 }
 
-_N_EXEC_RAW::ret_t _N_EXEC_RAW::CALL(RAW_EXEC_ARGS) {
+_N_EXEC::ret_t _N_EXEC::CALL(RAW_EXEC_ARGS) {
 	auto arg0 = instr->arg[0];
 	auto it = avail_funcs->find(arg0);
 	CORE_ASSERT(it != avail_funcs->end(), "Call to undeclared function");
@@ -1072,7 +1216,7 @@ _N_EXEC_RAW::ret_t _N_EXEC_RAW::CALL(RAW_EXEC_ARGS) {
 	return 0;
 }
 
-_N_EXEC_RAW::ret_t _N_EXEC_RAW::FUNC_RET(RAW_EXEC_ARGS) {
+_N_EXEC::ret_t _N_EXEC::FUNC_RET(RAW_EXEC_ARGS) {
 	auto end = mem_space->MEM_STACK.get() + mem_space->MEM_STACK_SIZE;
 	auto &func = (*avail_funcs)[frame->cur_func_id];
 
@@ -1087,7 +1231,7 @@ _N_EXEC_RAW::ret_t _N_EXEC_RAW::FUNC_RET(RAW_EXEC_ARGS) {
 	return 0;
 }
 
-_N_EXEC_RAW::ret_t _N_EXEC_RAW::EXIT_PROG(RAW_EXEC_ARGS) {
+_N_EXEC::ret_t _N_EXEC::EXIT_PROG(RAW_EXEC_ARGS) {
 	using namespace _N_EXEC_UTILS;
 
 	auto arg0 = instr->arg[0];
@@ -1096,9 +1240,9 @@ _N_EXEC_RAW::ret_t _N_EXEC_RAW::EXIT_PROG(RAW_EXEC_ARGS) {
 	throw ret_val;
 }
 
-_N_EXEC_RAW::ret_t _N_EXEC_RAW::JUMP(RAW_EXEC_ARGS) { return instr->arg[0]; }
+_N_EXEC::ret_t _N_EXEC::JUMP(RAW_EXEC_ARGS) { return instr->arg[0]; }
 
-_N_EXEC_RAW::ret_t _N_EXEC_RAW::CMP_REG(RAW_EXEC_ARGS) {
+_N_EXEC::ret_t _N_EXEC::CMP_REG(RAW_EXEC_ARGS) {
 	using namespace _N_EXEC_UTILS;
 
 	auto &arg0 = instr->arg[0];
@@ -1113,11 +1257,11 @@ _N_EXEC_RAW::ret_t _N_EXEC_RAW::CMP_REG(RAW_EXEC_ARGS) {
 	return 1;
 }
 
-_N_EXEC_RAW::ret_t _N_EXEC_RAW::JUMP_EQ(RAW_EXEC_ARGS) {
+_N_EXEC::ret_t _N_EXEC::JUMP_EQ(RAW_EXEC_ARGS) {
 	return (frame->flags.were_equal) ? instr->arg[0] : 1;
 }
 
-_N_EXEC_RAW::ret_t _N_EXEC_RAW::INIT_IMM(RAW_EXEC_ARGS) {
+_N_EXEC::ret_t _N_EXEC::INIT_IMM(RAW_EXEC_ARGS) {
 	using namespace _N_EXEC_UTILS;
 
 	auto arg0 = instr->arg[0];
@@ -1130,7 +1274,7 @@ _N_EXEC_RAW::ret_t _N_EXEC_RAW::INIT_IMM(RAW_EXEC_ARGS) {
 	return 1;
 }
 
-_N_EXEC_RAW::ret_t _N_EXEC_RAW::ALLOC_HEAP(RAW_EXEC_ARGS) {
+_N_EXEC::ret_t _N_EXEC::ALLOC_HEAP(RAW_EXEC_ARGS) {
 	using namespace _N_EXEC_UTILS;
 
 	auto arg0 = instr->arg[0];
@@ -1139,25 +1283,25 @@ _N_EXEC_RAW::ret_t _N_EXEC_RAW::ALLOC_HEAP(RAW_EXEC_ARGS) {
 	auto &reg0 = get_reg(arg0, FWD_RAW_ARGS);
 	auto &reg1 = get_reg(arg1, FWD_RAW_ARGS);
 
-	auto ptr = mem_space->heap.allocate(reg1);
+	auto ptr = mem_space->HEAP.allocate(reg1);
 	reg0 = ptr;
 
 	return 1;
 }
 
-_N_EXEC_RAW::ret_t _N_EXEC_RAW::DEALLOC_HEAP(RAW_EXEC_ARGS) {
+_N_EXEC::ret_t _N_EXEC::DEALLOC_HEAP(RAW_EXEC_ARGS) {
 	using namespace _N_EXEC_UTILS;
 
 	auto arg0 = instr->arg[0];
 
 	auto reg = get_reg(arg0, FWD_RAW_ARGS);
 
-	mem_space->heap.deallocate(reg);
+	mem_space->HEAP.deallocate(reg);
 
 	return 1;
 }
 
-_N_EXEC_RAW::ret_t _N_EXEC_RAW::WRITE_HEAP(RAW_EXEC_ARGS) {
+_N_EXEC::ret_t _N_EXEC::WRITE_HEAP(RAW_EXEC_ARGS) {
 	using namespace _N_EXEC_UTILS;
 
 	auto arg0 = instr->arg[0];
@@ -1166,12 +1310,12 @@ _N_EXEC_RAW::ret_t _N_EXEC_RAW::WRITE_HEAP(RAW_EXEC_ARGS) {
 	auto &reg0 = get_reg(arg0, FWD_RAW_ARGS);
 	auto &reg1 = get_reg(arg1, FWD_RAW_ARGS);
 
-	mem_space->heap.write(reg0, reg1);
+	mem_space->HEAP.write(reg0, reg1);
 
 	return 1;
 }
 
-_N_EXEC_RAW::ret_t _N_EXEC_RAW::READ_HEAP(RAW_EXEC_ARGS) {
+_N_EXEC::ret_t _N_EXEC::READ_HEAP(RAW_EXEC_ARGS) {
 	using namespace _N_EXEC_UTILS;
 
 	auto arg0 = instr->arg[0];
@@ -1180,13 +1324,13 @@ _N_EXEC_RAW::ret_t _N_EXEC_RAW::READ_HEAP(RAW_EXEC_ARGS) {
 	auto &reg0 = get_reg(arg0, FWD_RAW_ARGS);
 	auto &reg1 = get_reg(arg1, FWD_RAW_ARGS);
 
-	reg0 = mem_space->heap.read(reg1);
+	reg0 = mem_space->HEAP.read(reg1);
 
 	return 1;
 }
 
 #define EXEC_ARITH_IN_PLACE_IMPL(macro, oper)                                                      \
-	_N_EXEC_RAW::ret_t _N_EXEC_RAW::macro(RAW_EXEC_ARGS) {                                         \
+	_N_EXEC::ret_t _N_EXEC::macro(RAW_EXEC_ARGS) {                                         \
 		using namespace _N_EXEC_UTILS;                                                             \
                                                                                                    \
 		auto arg0 = instr->arg[0];                                                                 \

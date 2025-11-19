@@ -12,6 +12,10 @@ file(GLOB SRC_TIME "src/exec_termination.cpp")
 add_executable(exec_term ${SRC_TIME})
 target_compile_options(exec_term PRIVATE -std=c++23 -O3)
 
+file(GLOB SRC_TIME "src/ioio.cpp")
+add_executable(ioio ${SRC_TIME})
+target_compile_options(ioio PRIVATE -std=c++23 -O0)
+
 
 file(GLOB_RECURSE MACRO_SOURCES
     CONFIGURE_DEPENDS
