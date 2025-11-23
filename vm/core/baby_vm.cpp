@@ -16,6 +16,7 @@
 #include <unordered_map>
 #include "exec.hpp"
 #include "biject_map.hpp"
+#include "io_handler.hpp"
 
 ///////////////////// DECLARATIONS ////////////////////////////
 
@@ -31,7 +32,6 @@ struct thread_builder_t;
 struct function_t;
 struct flag_data;
 enum class operand_t;
-struct io_handler_t;
 
 ///////////////////// USINGS ////////////////////////////
 
@@ -161,143 +161,6 @@ template <> struct hash<code_pos_t> {
 
 struct dbg_require_stop {
 	std::function<void()> inform;
-};
-
-struct io_handler_t {
-	enum class INPUT_INTERFACE {
-		SINGLE_LINE_OR_PREV,
-		UNTILL_SUCCESS,
-	};
-
-	INPUT_INTERFACE state;
-	std::shared_ptr<std::string> entire_content;
-	std::vector<std::string> last_nonwhite_lines;
-
-	std::stringstream stream;
-	std::streampos stream_start;
-	int last_content_size = 0;
-
-	bool was_line = false;
-	bool success = false;
-
-	io_handler_t(INPUT_INTERFACE mode) :
-		entire_content(std::make_shared<std::string>("")),
-		state(mode) {}
-
-	io_handler_t(io_handler_t &oth) :
-		state{oth.state},
-		last_nonwhite_lines{oth.last_nonwhite_lines},
-		entire_content{oth.entire_content},
-		stream{*oth.entire_content.get()},
-		stream_start(stream.tellg()) {
-		stream.ignore(oth.stream.tellg() - oth.stream_start);
-	}
-
-	io_handler_t(io_handler_t &&) = default;
-
-	static bool all_white(const std::string &str) {
-		return std::all_of(str.begin(), str.end(), [](char c) { return bool(std::isspace(c)); });
-	}
-
-	void get_common_line(std::string &line_buf, char delim = '\n') {
-		auto &str = *entire_content.get();
-
-		if (str.size() == last_content_size) {
-			CORE_ASSERT(std::getline(std::cin, line_buf, delim), "Expeected a line");
-			line_buf += delim;
-			str += line_buf;
-			last_content_size = str.size();
-
-			return;
-		}
-
-		std::string tmp = "";
-
-		while (last_content_size < str.size()) {
-			char c = str[last_content_size++];
-
-			tmp += c;
-			if (c == delim) {
-				break;
-			}
-		}
-
-		line_buf = tmp;
-	}
-
-	void handle_single_line(auto &elem) {
-		if (was_line == true) {
-			success = false;
-			return;
-		}
-
-		std::string tmp;
-		get_common_line(tmp);
-		was_line = true;
-
-		if (!all_white(tmp)) {
-			last_nonwhite_lines.push_back(tmp);
-		}
-
-		if (last_nonwhite_lines.empty()) {
-			success = false;
-			return;
-		}
-
-		stream.clear();
-		stream.str(last_nonwhite_lines.back());
-
-		success = bool(stream >> elem);
-	}
-
-	void handle_until_success(auto &elem) {
-		if (stream >> elem) {
-			success = true;
-			return;
-		}
-
-		std::string tmp;
-		while (!(stream >> elem)) {
-			if (!stream.eof()) {
-				success = false;
-				return;
-			}
-
-			get_common_line(tmp);
-
-			stream.clear();
-			stream.str(tmp);
-		}
-		last_nonwhite_lines.push_back(tmp);
-		success = true;
-	}
-
-	io_handler_t &operator>>(auto &elem) {
-		success = false;
-		if (stream >> elem) {
-			success = true;
-			return *this;
-		}
-
-		switch (state) {
-		case INPUT_INTERFACE::SINGLE_LINE_OR_PREV:
-			handle_single_line(elem);
-			break;
-		case INPUT_INTERFACE::UNTILL_SUCCESS:
-			handle_until_success(elem);
-			break;
-		}
-
-		return *this;
-	}
-
-	void discard_remaining() {
-		stream.clear();
-		stream.str("");
-		was_line = false;
-	}
-
-	operator bool() const { return success; }
 };
 
 namespace _N_PRNT_UTILS {
