@@ -1,6 +1,12 @@
-#include "defer.h"
+#include "args.hpp"
+#include "biject_map.hpp"
 #include "debug.h"
+#include "defer.h"
+#include "parse.hpp"
+#include "prnt.hpp"
+#include "exec.hpp"
 #include "inline.h"
+#include "io_handler.hpp"
 #include "musttail.h"
 #include "opcode_def.hpp"
 #include <bits/stdc++.h>
@@ -14,12 +20,8 @@
 #include <tuple>
 #include <type_traits>
 #include <unordered_map>
-#include "exec.hpp"
-#include "biject_map.hpp"
-#include "io_handler.hpp"
 
 ///////////////////// DECLARATIONS ////////////////////////////
-
 
 struct thread_dbg_data_t;
 struct dbg_require_stop;
@@ -31,60 +33,21 @@ struct func_builder_t;
 struct thread_builder_t;
 struct function_t;
 struct flag_data;
-enum class operand_t;
 
 ///////////////////// USINGS ////////////////////////////
 
 using code_block = std::vector<instrutction_t>;
-
 using labl_id_t = uint64_t;
 using reg_id_t = uint64_t;
-using breakpoints_id = uint64_t;
-
 using reg_id_map = biject_map_t<std::string, reg_id_t>;
-
 using labl_id_map = biject_map_t<std::string, labl_id_t>;
 using labl_map = std::unordered_map<labl_id_t, size_t>;
-
 using func_id_map = biject_map_t<std::string, func_id_t>;
 
-///////////////////// EXEC MACRO ////////////////////////////
-
-#define _N_PARSE	   parse
-#define _N_PARSE_UTILS _N_PARSE::utils
-
-namespace _N_PARSE {
-#define PARSE_OPCODE_ARGS                                                                          \
-	[[maybe_unused]] thread_builder_t &builder, [[maybe_unused]] const std::smatch &matches
-
-using func_t = void(PARSE_OPCODE_ARGS);
-}; // namespace _N_PARSE
-
-#define _N_PRNT		  prnt
-#define _N_PRNT_UTILS _N_PARSE::utils
-
-namespace _N_PRNT {
-#define PRNT_OPCODE_ARGS                                                                           \
-	[[maybe_unused]] const instrutction_t *instr, const frame_t *frame, const thread_dbg_data_t &dbg
-
-using func_t = void(PRNT_OPCODE_ARGS);
-}; // namespace _N_PRNT
-
-///////////////////// OPCODE_MACROS ////////////////////////////
-
-#define _N_ARGS		  args
-#define _N_ARGS_UTILS _N_ARGS::utils
+using breakpoints_id = uint64_t;
 
 #define STRINGIFY(x) #x
 #define nameof(x)	 STRINGIFY(x)
-
-#define REQUIRE_PARSE(macro)                                                                       \
-	namespace _N_ARGS {                                                                            \
-	const std::vector<operand_t> &macro();                                                         \
-	}                                                                                              \
-	namespace _N_PARSE {                                                                           \
-	func_t macro;                                                                                  \
-	}
 
 #define REQUIRED_FOR_EXEC(macro)                                                                   \
 	REQUIRE_PARSE(macro)                                                                           \
@@ -120,13 +83,6 @@ struct code_pos_t {
 		return oth.func_id == func_id && pos == oth.pos;
 	}
 };
-
-// template <> struct std::formatter<code_pos_t> : std::formatter<std::string> {
-// 	auto format(const code_pos_t &pos, auto &ctx) {
-// 		std::string ans = std::format("[{}:{}]", pos.func_id, pos.pos);
-// 		return std::formatter<std::string>::format(ans, ctx);
-// 	}
-// };
 
 struct flag_data {
 	bool were_equal = false;
@@ -535,7 +491,7 @@ struct thread_t {
 					}
 
 					show_reg(reg, frame, dbg);
-					
+
 					continue;
 				}
 
@@ -550,15 +506,14 @@ struct thread_t {
 
 					continue;
 				}
-
 			}
 
 			std::println("unknown command: \"{}\"", input);
 		}
 	}
 
-	void show_pos(const instrutction_t *const &instr, frame_t *const &frame, thread_dbg_data_t &dbg, bool detailed = false,
-				  int idx = 0) {
+	void show_pos(const instrutction_t *const &instr, frame_t *const &frame, thread_dbg_data_t &dbg,
+				  bool detailed = false, int idx = 0) {
 
 		if (detailed) {
 			std::cout << "\n";
@@ -568,8 +523,8 @@ struct thread_t {
 		auto [func_id, pos] = to_pos(instr, frame);
 		auto func_name_opt = dbg.function_names.by_second(func_id);
 		CORE_ASSERT(func_name_opt.has_value())
-		std::println("#{:<5} func: {:<15} [id: {:<3}] instr no: {:<8}", idx, func_name_opt.value(), func_id,
-					 pos);
+		std::println("#{:<5} func: {:<15} [id: {:<3}] instr no: {:<8}", idx, func_name_opt.value(),
+					 func_id, pos);
 	}
 
 	void show_mem_stack(frame_t *frame) {
@@ -583,15 +538,16 @@ struct thread_t {
 		return;
 	}
 
-	void show_reg(const std::string& reg, frame_t* frame, thread_dbg_data_t& dbg) {
+	void show_reg(const std::string &reg, frame_t *frame, thread_dbg_data_t &dbg) {
 		auto func_id = frame->cur_func_id;
 
 		auto it = dbg.func_data.find(func_id);
-		CORE_ASSERT(it != dbg.func_data.end(), "There isn't function with id {} in dbg data", func_id);
+		CORE_ASSERT(it != dbg.func_data.end(), "There isn't function with id {} in dbg data",
+					func_id);
 
 		auto it2 = functions.find(func_id);
-		CORE_ASSERT(it2 != functions.end(), "There isn't function with id {} in exec data", func_id);
-
+		CORE_ASSERT(it2 != functions.end(), "There isn't function with id {} in exec data",
+					func_id);
 
 		auto dbg_reg = it->second.registers;
 		auto exec_reg = it2->second.regs;
@@ -612,7 +568,6 @@ struct thread_t {
 
 		auto reg_id = it3.value();
 		std::println("{:<10}: {:<10}", reg, exec_reg[reg_id]);
-
 	}
 
 	void show_heap(unit ptr1, unit ptr2) {
@@ -768,33 +723,28 @@ public:
 
 ///////////////////// PARSING INSTRUCTIONS ////////////////////////////
 
-enum class operand_t {
-	DECIMAL_NUM,
-	REGISTER_ID,
-	FUNC_NAME,
-	LABEL_ID,
-	REG_WITH_PTR,
-};
-
-constexpr std::string regex_arg_t(const operand_t &arg) {
-	switch (arg) {
-	case operand_t::DECIMAL_NUM:
-		return "(\\d+)";
-	case operand_t::REGISTER_ID:
-		return "\\$([A-Za-z0-9_]+)";
-	case operand_t::REG_WITH_PTR:
-		return "\\[\\$([A-Za-z0-9_]+)\\]";
-	case operand_t::FUNC_NAME:
-		return "([A-Za-z0-9_]+)";
-	case operand_t::LABEL_ID:
-		return "([A-Za-z0-9_]+)";
-	}
-
-	//@todo make it BEAUTIFUL!
-	CORE_ASSERT(false, "operand {} does not have a defined regex", int(arg));
-};
+namespace _N_PARSE_UTILS {
+	constexpr std::string regex_arg_t(const operand_t &arg) {
+		switch (arg) {
+		case operand_t::DECIMAL_NUM:
+			return "(\\d+)";
+		case operand_t::REGISTER_ID:
+			return "\\$([A-Za-z0-9_]+)";
+		case operand_t::REG_WITH_PTR:
+			return "\\[\\$([A-Za-z0-9_]+)\\]";
+		case operand_t::FUNC_NAME:
+			return "([A-Za-z0-9_]+)";
+		case operand_t::LABEL_ID:
+			return "([A-Za-z0-9_]+)";
+		}
+	
+		//@todo make it BEAUTIFUL!
+		CORE_ASSERT(false, "operand {} does not have a defined regex", int(arg));
+	};
+}
 
 constexpr std::string regex_func() {
+	using _N_PARSE_UTILS::regex_arg_t;
 	return "\\s*fun\\s+" + regex_arg_t(operand_t::FUNC_NAME) + "\\s*\\(\\s*" +
 		   regex_arg_t(operand_t::DECIMAL_NUM) + "\\s*\\)" + "\\s*->\\s*" +
 		   regex_arg_t(operand_t::DECIMAL_NUM) + "\\s*:\\s*" + "\\s*\\{([^}]*)\\}";
@@ -838,12 +788,6 @@ constexpr std::string print_arg(unit data, func_id_t f, operand_t type,
 	CORE_ASSERT(false, "operand {} does not have a defined prnt func", int(type));
 };
 } // namespace _N_PRNT_UTILS
-
-#define ENLIST_OPERANDS(macro, ...)                                                                \
-	const std::vector<operand_t> &_N_ARGS::macro() {                                               \
-		static const std::vector<operand_t> inner = {__VA_ARGS__};                                 \
-		return inner;                                                                              \
-	}
 
 ENLIST_OPERANDS(STCK_INIT)
 ENLIST_OPERANDS(STCK_DEINIT)

@@ -31,5 +31,4 @@ using func_t = ret_t(RAW_EXEC_ARGS);
 
 }; // namespace _N_EXEC
 
-#define _N_PARSE	   parse
-#define _N_PARSE_UTILS _N_PARSE::utils
+
