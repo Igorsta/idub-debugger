@@ -6,7 +6,7 @@ CURRENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 find_project_root() {
     local dir="$1"
     while [[ "$dir" != "/" ]]; do
-        if [[ -d "$dir/.git" || -f "$dir/CMakeLists.txt" ]]; then
+        if [[ -d "$dir/.git" ]]; then
             echo "$dir"
             return 0
         fi

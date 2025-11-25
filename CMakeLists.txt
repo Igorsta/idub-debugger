@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.15)
+cmake_minimum_required(VERSION 3.25)
 
 project(IDUB_Swiss_VM CXX)
 
@@ -30,5 +30,8 @@ target_include_directories(my_vm PRIVATE
 
 target_link_libraries(my_vm PRIVATE common_code)
 
+enable_testing()
+
 add_subdirectory(experimental)
 add_subdirectory(gdb_demo)
+add_subdirectory(tests)

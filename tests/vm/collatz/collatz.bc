@@ -1,0 +1,65 @@
+fun main(0) -> 0 : {
+	demand_reg $out;
+	demand_reg $inp;
+	demand_reg $0;
+
+	input_reg $inp;
+	init_imm $0, 0;
+
+	init;
+	reg_to_stack $0;
+	init;
+	reg_to_stack $inp;
+
+	call_func collatz;
+
+	deinit;
+	stack_to_reg $out;
+	output_reg $out;
+
+	exit_prog $0;
+}
+
+fun collatz(2) -> 2 : {
+	demand_reg $n;
+	demand_reg $3;
+	demand_reg $2;
+	demand_reg $1;
+	demand_reg $0;
+	demand_reg $help;
+
+	init_imm $3, 3;
+	init_imm $2, 2;
+	init_imm $1, 1;
+	init_imm $0, 0;
+	stack_to_reg $n;
+
+	cmp_reg $n, $2;				# if (n == 2);
+	jump_if_eq END;
+
+	deinit ;
+	stack_to_reg $help;
+	add_in_place $help, $1;
+	reg_to_stack $help;
+	init;
+
+	reg_from_reg $help, $n;
+	mod_in_place $help, $2;
+	cmp_reg $help, $0;			# if (n % 2) == 0;
+	jump_if_eq EVEN;
+
+	label ODD;
+	mul_in_place $n, $3;
+	add_in_place $n, $1;			# n = 3 * n + 1;
+	jump_to RECURSIVE;
+
+	label EVEN;					# else;
+	div_in_place $n, $2;			# n = n / 2;
+	;
+	label RECURSIVE;
+	reg_to_stack $n;
+	call_func collatz;
+
+	label END;
+	func_return;
+}
