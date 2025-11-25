@@ -110,6 +110,8 @@ static const std::unordered_map<_N_EXEC::func_t *, _N_PRNT::func_t *> dict = {
 	APPLY_TO_SIMPLE(PRNT_ENTRY) APPLY_TO_JUMP(PRNT_ENTRY)};
 } // namespace _N_PRNT_UTILS
 
+
+
 struct thread_dbg_data_t {
 
 	struct func_dbg_data_t {
@@ -157,6 +159,8 @@ struct thread_dbg_data_t {
 		CORE_ASSERT(val.has_value(), "Why are you trying to print a non-existant function?!");
 		return val.value();
 	}
+
+
 };
 
 
