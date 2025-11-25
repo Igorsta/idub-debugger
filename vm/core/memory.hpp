@@ -24,4 +24,6 @@ struct memory_space {
 		IO(io_handler_t::INPUT_INTERFACE::UNTILL_SUCCESS) {
 		CORE_ASSERT(MEM_STACK && CALL_STACK, "Couldn't allocate memory and call stacks");
 	}
+
+	memory_space(memory_space &&) = default;
 };

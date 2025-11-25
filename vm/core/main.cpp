@@ -21,15 +21,54 @@
 #include <sys/types.h>
 #include <tuple>
 #include <unordered_map>
+#include <vector>
 
 ///////////////////// DECLARATIONS ////////////////////////////
 
 struct thread_dbg_data_t;
 struct dbg_require_stop;
 
-struct thread_t;
+struct code_pos_t {
+	func_id_t func_id;
+	size_t pos;
 
-struct code_pos_t;
+	bool operator==(const code_pos_t &oth) const {
+		return oth.func_id == func_id && pos == oth.pos;
+	}
+};
+
+namespace std {
+template <> struct hash<code_pos_t> {
+	constexpr size_t operator()(const code_pos_t &code_pos) const {
+		return std::hash<func_id_t>{}(code_pos.func_id) ^ code_pos.pos;
+	}
+};
+} // namespace std
+
+struct thread_t {
+	func_map functions;
+	func_id_t main_id;
+	memory_space memory;
+
+	const instrutction_t *instr;
+	frame_t *frame;
+
+	void init();
+
+	void start_execution();
+
+	void exec();
+
+	INLINE void exec_single(thread_dbg_data_t &dbg);
+
+	void exec(thread_dbg_data_t &dbg);
+
+	code_pos_t to_pos(const instrutction_t *const &instr, frame_t *const &frame);
+
+	INLINE size_t no_of_frames();
+	code_pos_t call_stack_top(size_t n = 0);
+};
+
 struct func_builder_t;
 struct thread_builder_t;
 struct function_t;
@@ -73,15 +112,6 @@ struct instrutction_t {
 	}
 };
 
-struct code_pos_t {
-	func_id_t func_id;
-	size_t pos;
-
-	bool operator==(const code_pos_t &oth) const {
-		return oth.func_id == func_id && pos == oth.pos;
-	}
-};
-
 struct function_t {
 	code_block body;
 	uint64_t no_of_args;
@@ -89,13 +119,6 @@ struct function_t {
 	mutable std::vector<unit> regs;
 };
 
-namespace std {
-template <> struct hash<code_pos_t> {
-	constexpr size_t operator()(const code_pos_t &code_pos) const {
-		return std::hash<func_id_t>{}(code_pos.func_id) ^ code_pos.pos;
-	}
-};
-} // namespace std
 
 #define enforce_stop(code, ...)                                                                    \
 	throw dbg_require_stop{.inform = [= __VA_OPT__(, __VA_ARGS__)]() { code; }};
@@ -111,11 +134,11 @@ static const std::unordered_map<_N_EXEC::func_t *, _N_PRNT::func_t *> dict = {
 } // namespace _N_PRNT_UTILS
 
 struct thread_dbg_data_t {
-
 	struct func_dbg_data_t {
 		reg_id_map registers;
 		labl_id_map labels;
 		labl_map label_positions;
+		std::vector<_N_EXEC::func_t *> instr_type;
 
 		std::string get_reg_name(unit id) const {
 			auto opt = registers.by_second(id);
@@ -128,6 +151,8 @@ struct thread_dbg_data_t {
 	biject_map_t<breakpoints_id, code_pos_t> breakpoints;
 	func_id_map function_names;
 	io_handler_t cli_io{io_handler_t::INPUT_INTERFACE::SINGLE_LINE_OR_PREV};
+
+	bool running = false;
 
 	std::optional<breakpoints_id> hit_breakpoint(const code_pos_t &position) {
 		return breakpoints.by_second(position);
@@ -157,73 +182,8 @@ struct thread_dbg_data_t {
 		CORE_ASSERT(val.has_value(), "Why are you trying to print a non-existant function?!");
 		return val.value();
 	}
-};
 
-struct thread_t {
-	func_map functions;
-	func_id_t main_id;
-	memory_space memory;
-
-	bool running = false;
-	const instrutction_t *instr;
-	frame_t *frame;
-
-	auto init() {
-		instr = functions.at(main_id).body.data();
-		frame = memory.CALL_STACK.get();
-		auto mem = &memory;
-
-		frame->stack_head = memory.MEM_STACK.get();
-		frame->stack_start = memory.MEM_STACK.get();
-		frame->cur_func_id = main_id;
-
-		memory.HEAP.allocated.clear();
-
-		return;
-	}
-
-	void start_execution() {
-		init();
-		try {
-			exec();
-		} catch (unit result) {
-			// std::print("The program has ended with a result {}\n", result);
-		}
-	}
-
-	void exec() {
-		{
-			instr += instr->action(instr, &memory, frame, &functions);
-		}
-
-		MUST_TAIL return exec();
-	}
-
-	INLINE void exec_single(thread_dbg_data_t &dbg) {
-		try {
-			instr += instr->action(instr, &memory, frame, &functions);
-		} catch (unit result) {
-			dbg.handle_result(result);
-		}
-	}
-
-	void exec(thread_dbg_data_t &dbg) {
-		frame->instr = instr;
-		dbg.stop_exec(to_pos(instr, frame), *this);
-		exec_single(dbg);
-
-		MUST_TAIL return exec(dbg);
-	}
-
-	code_pos_t to_pos(const instrutction_t *const &instr, frame_t *const &frame) {
-		auto func_id = frame->cur_func_id;
-		return code_pos_t{
-			.func_id = func_id,
-			.pos = static_cast<size_t>(instr - functions[func_id].body.data()),
-		};
-	}
-
-	bool was_undecided(thread_dbg_data_t &dbg) {
+	bool was_undecided() {
 		std::cout << "Program is already running. Are you sure you want to execute this command? "
 					 "(y / n)\n";
 		io_handler_t loc_io{io_handler_t::INPUT_INTERFACE::SINGLE_LINE_OR_PREV};
@@ -234,9 +194,9 @@ struct thread_t {
 		return (ans != 'y');
 	}
 
-	void safe_exec(thread_dbg_data_t &dbg) {
+	void safe_exec(thread_t &thr) {
 		try {
-			exec(dbg);
+			thr.exec(*this);
 		} catch (unit &res) {
 			std::println("program ended normally with {}", res);
 			running = false;
@@ -245,12 +205,12 @@ struct thread_t {
 		}
 	}
 
-	void safe_next(thread_dbg_data_t &dbg, bool prnt = false) {
+	void safe_next(thread_t &thr, bool prnt = false) {
 		try {
-			exec_single(dbg);
+			thr.exec_single(*this);
 
 			if (prnt) {
-				show_pos(instr, frame, dbg, true);
+				show_pos(thr, true);
 			}
 		} catch (unit res) {
 			std::println("program ended normally with {}", res);
@@ -260,38 +220,38 @@ struct thread_t {
 		}
 	}
 
-	void start_debug_session(thread_dbg_data_t &dbg) {
+	void start_debug_session(thread_t thr) {
 		std::string input;
-		init();
+		thr.init();
 
 		while (true) {
 
-			dbg.cli_io.discard_remaining();
+			cli_io.discard_remaining();
 			std::cout << "(debug) ";
-			if (!(dbg.cli_io >> input)) {
+			if (!(cli_io >> input)) {
 				return;
 			}
 			std::cout << "[input] " << input << "\n";
 
 			if (input == "run" || input == "r") {
-				if (running && was_undecided(dbg)) {
+				if (running && was_undecided()) {
 					continue;
 				}
 
-				init();
+				thr.init();
 				running = true;
-				safe_exec(dbg);
+				safe_exec(thr);
 				continue;
 			}
 
 			if (input == "start" || input == "s") {
-				if (running && was_undecided(dbg)) {
+				if (running && was_undecided()) {
 					continue;
 				}
 
-				init();
+				thr.init();
 				running = true;
-				show_pos(instr, frame, dbg, true);
+				show_pos(thr, true);
 
 				continue;
 			}
@@ -302,7 +262,7 @@ struct thread_t {
 					continue;
 				}
 
-				safe_next(dbg, true);
+				safe_next(thr, true);
 				continue;
 			}
 
@@ -312,7 +272,7 @@ struct thread_t {
 					continue;
 				}
 
-				show_pos(instr, frame, dbg, true);
+				show_pos(thr, true);
 				continue;
 			}
 
@@ -322,7 +282,7 @@ struct thread_t {
 					continue;
 				}
 
-				show_call_stack(dbg);
+				show_call_stack(thr);
 				continue;
 			}
 
@@ -332,8 +292,8 @@ struct thread_t {
 					continue;
 				}
 
-				safe_next(dbg);
-				safe_exec(dbg);
+				safe_next(thr);
+				safe_exec(thr);
 				continue;
 			}
 
@@ -355,12 +315,12 @@ struct thread_t {
 				std::string func_name;
 				uint64_t pos;
 
-				if (!((dbg.cli_io >> func_name) && (dbg.cli_io >> pos))) {
+				if (!((cli_io >> func_name) && (cli_io >> pos))) {
 					std::println("expected a func name and no of instr");
 					continue;
 				}
 
-				auto opt = dbg.function_names.by_first(func_name);
+				auto opt = function_names.by_first(func_name);
 				if (!opt.has_value()) {
 					std::println("unknown function \"{}\"", func_name);
 					continue;
@@ -368,42 +328,42 @@ struct thread_t {
 
 				code_pos_t code_pos = {.func_id = opt.value(), .pos = pos};
 
-				breakpoints_id id = dbg.set_breakpoint(code_pos);
+				breakpoints_id id = set_breakpoint(code_pos);
 				std::println("New breakpoint {}", id);
 				continue;
 			}
 
 			if (input == "info") {
 				std::string spec;
-				if (!(dbg.cli_io >> spec)) {
+				if (!(cli_io >> spec)) {
 					std::println("expected a specifier to the region you are interested in");
 					continue;
 				}
 
 				if (spec == "locals" || spec == "loc") {
-					show_mem_stack(frame);
+					show_mem_stack(thr.frame);
 					continue;
 				}
 
 				if (spec == "registers" || spec == "reg") {
 					std::string reg;
-					if (!(dbg.cli_io >> reg)) {
+					if (!(cli_io >> reg)) {
 						reg = "";
 					}
 
-					show_reg(reg, frame, dbg);
+					show_reg(reg, thr.call_stack_top(), thr);
 
 					continue;
 				}
 
 				if (spec == "heap") {
 					unit ptr1, ptr2;
-					if (!((dbg.cli_io >> ptr1) && (dbg.cli_io >> ptr2))) {
+					if (!((cli_io >> ptr1) && (cli_io >> ptr2))) {
 						std::println("expected a range for the heap analysis");
 						continue;
 					}
 
-					show_heap(ptr1, ptr2);
+					show_heap(ptr1, ptr2, thr);
 
 					continue;
 				}
@@ -413,16 +373,22 @@ struct thread_t {
 		}
 	}
 
-	void show_pos(const instrutction_t *const &instr, frame_t *const &frame, thread_dbg_data_t &dbg,
-				  bool detailed = false, int idx = 0) {
+	void show_pos(thread_t &thr, bool detailed = false, int idx = 0,
+				  std::optional<code_pos_t> code_pos = {}) {
 
-		if (detailed) {
+		if (!code_pos.has_value()) {
+			code_pos.emplace(thr.call_stack_top());
+		}
+		auto [func_id, pos] = code_pos.value();
+
+		if (false && detailed) {
 			std::cout << "\n";
-			_N_PRNT_UTILS::dict.at(instr->action)(instr, frame, dbg);
+
+			_N_PRNT_UTILS::dict.at(func_data[func_id].instr_type[pos])(code_pos.value(), thr,
+																	   *this);
 		}
 
-		auto [func_id, pos] = to_pos(instr, frame);
-		auto func_name_opt = dbg.function_names.by_second(func_id);
+		auto func_name_opt = function_names.by_second(func_id);
 		if (!func_name_opt.has_value()) {
 			CORE_ASSERT(func_name_opt.has_value())
 		}
@@ -441,15 +407,14 @@ struct thread_t {
 		return;
 	}
 
-	void show_reg(const std::string &reg, frame_t *frame, thread_dbg_data_t &dbg) {
-		auto func_id = frame->cur_func_id;
+	void show_reg(const std::string &reg, code_pos_t pos, thread_t &thr) {
+		auto [func_id, _] = pos;
 
-		auto it = dbg.func_data.find(func_id);
-		CORE_ASSERT(it != dbg.func_data.end(), "There isn't function with id {} in dbg data",
-					func_id);
+		auto it = func_data.find(func_id);
+		CORE_ASSERT(it != func_data.end(), "There isn't function with id {} in dbg data", func_id);
 
-		auto it2 = functions.find(func_id);
-		CORE_ASSERT(it2 != functions.end(), "There isn't function with id {} in exec data",
+		auto it2 = thr.functions.find(func_id);
+		CORE_ASSERT(it2 != thr.functions.end(), "There isn't function with id {} in exec data",
 					func_id);
 
 		auto dbg_reg = it->second.registers;
@@ -473,10 +438,10 @@ struct thread_t {
 		std::println("{:<10}: {:<10}", reg, exec_reg[reg_id]);
 	}
 
-	void show_heap(unit ptr1, unit ptr2) {
-		if (ptr1 >= memory.HEAP_SIZE || ptr2 >= memory.HEAP_SIZE) {
+	void show_heap(unit ptr1, unit ptr2, thread_t &thr) {
+		if (ptr1 >= thr.memory.HEAP_SIZE || ptr2 >= thr.memory.HEAP_SIZE) {
 			std::println("Poiners {:<4} {:<4} are out of bounds - heap is of size {:<4}", ptr1,
-						 ptr2, memory.HEAP_SIZE);
+						 ptr2, thr.memory.HEAP_SIZE);
 			return;
 		}
 
@@ -484,7 +449,7 @@ struct thread_t {
 		std::string val;
 
 		while (ptr1 <= ptr2) {
-			opt = memory.HEAP.read(ptr1);
+			opt = thr.memory.HEAP.read(ptr1);
 			val = opt.has_value() ? std::to_string(opt.value()) : "#";
 
 			std::println("{:<3} {:<}", ptr1, val);
@@ -492,16 +457,82 @@ struct thread_t {
 		}
 	}
 
-	void show_call_stack(thread_dbg_data_t &dbg) {
-		auto bottom = memory.CALL_STACK.get();
-		auto top = frame;
-		auto frame_to_prnt = frame;
-		while (frame_to_prnt >= bottom) {
-			show_pos(frame_to_prnt->instr, frame_to_prnt, dbg, false, top - frame_to_prnt);
-			frame_to_prnt--;
+	void show_call_stack(thread_t &thr) {
+		int call_stack_size = thr.no_of_frames();
+		for (int i = 0; i < call_stack_size; i++) {
+			show_pos(thr, false, i, thr.call_stack_top(i));
 		}
 	}
 };
+
+/////////////////////////////// THREAD IMPL ///////////////////////////////////////
+
+void thread_t::init() {
+	instr = functions.at(main_id).body.data();
+	frame = memory.CALL_STACK.get();
+	auto mem = &memory;
+
+	frame->stack_head = memory.MEM_STACK.get();
+	frame->stack_start = memory.MEM_STACK.get();
+	frame->cur_func_id = main_id;
+
+	memory.HEAP.allocated.clear();
+
+	return;
+}
+
+void thread_t::start_execution() {
+	init();
+	try {
+		exec();
+	} catch (unit result) {
+		// std::print("The program has ended with a result {}\n", result);
+	}
+}
+
+void thread_t::exec() {
+	{
+		instr += instr->action(instr, &memory, frame, &functions);
+	}
+
+	MUST_TAIL return exec();
+}
+
+INLINE void thread_t::exec_single(thread_dbg_data_t &dbg) {
+	try {
+		instr += instr->action(instr, &memory, frame, &functions);
+	} catch (unit result) {
+		dbg.handle_result(result);
+	}
+}
+
+void thread_t::exec(thread_dbg_data_t &dbg) {
+	frame->instr = instr;
+	dbg.stop_exec(to_pos(instr, frame), *this);
+	exec_single(dbg);
+
+	MUST_TAIL return exec(dbg);
+}
+
+code_pos_t thread_t::to_pos(const instrutction_t *const &instr, frame_t *const &frame) {
+	auto func_id = frame->cur_func_id;
+	return code_pos_t{
+		.func_id = func_id,
+		.pos = static_cast<size_t>(instr - functions[func_id].body.data()),
+	};
+}
+
+INLINE size_t thread_t::no_of_frames() { return frame - memory.CALL_STACK.get(); }
+
+code_pos_t thread_t::call_stack_top(size_t n) {
+	CORE_ASSERT(n < no_of_frames());
+
+	frame_t *ans_frame = &memory.CALL_STACK[no_of_frames() - 1 - n];
+
+	return to_pos(ans_frame->instr, ans_frame);
+}
+
+//////////////////////////////////////////////////////////////////////
 
 struct func_builder_t {
 	func_id_map &func_decl;
@@ -546,10 +577,18 @@ struct func_builder_t {
 	}
 
 	thread_dbg_data_t::func_dbg_data_t make_debug_data() {
+
+		std::vector<_N_EXEC::func_t *> type_of_instr;
+
+		for (int i = 0; i < built_func_body.size(); i++) {
+			type_of_instr.push_back(built_func_body[i].action);
+		}
+
 		return {
 			.registers = reg_decl,
 			.labels = labl_decl,
 			.label_positions = label_pos,
+			.instr_type = type_of_instr,
 		};
 	}
 
@@ -777,11 +816,11 @@ void _N_PARSE::DEMAND_REG(PARSE_OPCODE_ARGS) { builder.func_builder.define_reg(m
 #define PRNT_IMPL(macro)                                                                           \
 	void _N_PRNT::macro(PRNT_OPCODE_ARGS) {                                                        \
 		std::cout << nameof(macro);                                                                \
+		auto [func_id, pos] = code_pos;                                                            \
+		instrutction_t *instr = &thr.functions[func_id].body[pos];                                 \
 		const auto &args = ::_N_ARGS::macro();                                                     \
 		for (int i = 0; i < args.size(); i++) {                                                    \
-			std::cout << " "                                                                       \
-					  << _N_PRNT_UTILS::print_arg(instr->arg[i], frame->cur_func_id, args[i],      \
-												  dbg);                                            \
+			std::cout << " " << _N_PRNT_UTILS::print_arg(instr->arg[i], func_id, args[i], dbg);    \
 		}                                                                                          \
 		std::cout << "\n";                                                                         \
 	}
@@ -1185,7 +1224,7 @@ int main(int argc, const char *argv[]) {
 	if (mode == "run") {
 		program.start_execution();
 	} else {
-		program.start_debug_session(debug_data);
+		debug_data.start_debug_session(std::move(program));
 	}
 
 	return 0;
