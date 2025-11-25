@@ -1,10 +1,12 @@
 #include "args.hpp"
 #include "biject_map.hpp"
+#include "config.hpp"
 #include "debug.h"
 #include "defer.h"
 #include "parse.hpp"
 #include "prnt.hpp"
 #include "exec.hpp"
+#include "memory.hpp"
 #include "inline.h"
 #include "io_handler.hpp"
 #include "musttail.h"
@@ -18,7 +20,6 @@
 #include <print>
 #include <sys/types.h>
 #include <tuple>
-#include <type_traits>
 #include <unordered_map>
 
 ///////////////////// DECLARATIONS ////////////////////////////
@@ -32,13 +33,10 @@ struct code_pos_t;
 struct func_builder_t;
 struct thread_builder_t;
 struct function_t;
-struct flag_data;
 
 ///////////////////// USINGS ////////////////////////////
 
 using code_block = std::vector<instrutction_t>;
-using labl_id_t = uint64_t;
-using reg_id_t = uint64_t;
 using reg_id_map = biject_map_t<std::string, reg_id_t>;
 using labl_id_map = biject_map_t<std::string, labl_id_t>;
 using labl_map = std::unordered_map<labl_id_t, size_t>;
@@ -82,19 +80,6 @@ struct code_pos_t {
 	bool operator==(const code_pos_t &oth) const {
 		return oth.func_id == func_id && pos == oth.pos;
 	}
-};
-
-struct flag_data {
-	bool were_equal = false;
-	bool first_was_bigger = false;
-};
-
-struct frame_t {
-	const instrutction_t *instr;
-	unit *stack_start;
-	unit *stack_head;
-	flag_data flags;
-	func_id_t cur_func_id;
 };
 
 struct function_t {
@@ -174,89 +159,6 @@ struct thread_dbg_data_t {
 	}
 };
 
-struct heap_t {
-	std::unique_ptr<unit[]> content;
-	std::set<std::pair<unit, unit>> allocated;
-	const size_t size;
-
-	heap_t(size_t alloc) :
-		content(std::make_unique<unit[]>(alloc)),
-		allocated{},
-		size{alloc} {CORE_ASSERT(content, "Couldn't successfully allocate buffer for heap!")}
-
-		unit allocate(unit chunk_size) {
-		auto it = allocated.begin();
-		int start = 0;
-
-		while (it != allocated.end() && start + chunk_size > it->first) {
-			start = it->first + it->second;
-			it++;
-		}
-
-		CORE_ASSERT(start + chunk_size <= size,
-					"Failed to allocate chunk: {0} + {1} is bigger than {2}", start, chunk_size,
-					size);
-		allocated.insert({start, chunk_size});
-
-		return start;
-	}
-
-	void deallocate(unit ptr) {
-		auto it = allocated.lower_bound({ptr, 0});
-
-		CORE_ASSERT(it != allocated.end() && it->first == ptr,
-					"address {} was not used for allocation", ptr);
-
-		allocated.erase(it);
-		return;
-	}
-
-	bool is_in_allocated(unit ptr) {
-		if (ptr >= size) {
-			return false;
-		}
-		auto it = allocated.upper_bound({ptr, -1});
-
-		return (it != allocated.begin() && (--it)->first <= ptr && ptr < it->first + it->second);
-	}
-
-	std::optional<unit> read(unit ptr) {
-		return (is_in_allocated(ptr) ? content[ptr] : std::optional<unit>{});
-	}
-
-	bool write(unit ptr, unit val) {
-		if (!is_in_allocated(ptr)) {
-			return false;
-		}
-
-		content[ptr] = val;
-
-		return true;
-	}
-};
-
-struct memory_space {
-	const size_t MEM_STACK_SIZE;
-	const size_t CALL_STACK_SIZE;
-	const size_t HEAP_SIZE;
-
-	std::unique_ptr<unit[]> MEM_STACK;
-	std::unique_ptr<frame_t[]> CALL_STACK;
-	heap_t HEAP;
-	io_handler_t IO;
-
-	memory_space(size_t MEM_STACK_SIZE = 10, size_t CALL_STACK_SIZE = 1000,
-				 size_t HEAP_SIZE = 2048) :
-		MEM_STACK_SIZE(MEM_STACK_SIZE),
-		CALL_STACK_SIZE(CALL_STACK_SIZE),
-		HEAP_SIZE(HEAP_SIZE),
-		MEM_STACK(std::make_unique<unit[]>(MEM_STACK_SIZE)),
-		CALL_STACK(std::make_unique<frame_t[]>(CALL_STACK_SIZE)),
-		HEAP(2048),
-		IO(io_handler_t::INPUT_INTERFACE::UNTILL_SUCCESS) {
-		CORE_ASSERT(MEM_STACK && CALL_STACK, "Couldn't allocate memory and call stacks");
-	}
-};
 
 struct thread_t {
 	func_map functions;
@@ -284,7 +186,7 @@ struct thread_t {
 		try {
 			exec(instr, frame);
 		} catch (unit result) {
-			std::print("The program has ended with a result {}\n", result);
+			// std::print("The program has ended with a result {}\n", result);
 		}
 	}
 
@@ -915,6 +817,8 @@ void parse_line(const std::string &line, thread_builder_t &builder) {
 
 	static const std::unordered_map<std::string, std::pair<std::regex, func_t *>> str_to_instr = {
 		{"#", {std::regex("\\s*(?:#.*)?"), nop}},
+		{";", {std::regex("\\s*;\\s*(?:#.*)?"), nop}},
+		
 #define parse_pos(macro) {nameof(macro), {make_opcode_pattern(nameof(macro)), &macro}},
 
 		APPLY_TO_ALL(parse_pos)};

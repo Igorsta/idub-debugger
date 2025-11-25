@@ -1,16 +1,13 @@
 #pragma once
 
 #include <cstddef>
-#include <cstdint>
+#include "config.hpp"
 #include <unordered_map>
 
 struct instrutction_t;
 struct memory_space;
 struct frame_t;
 struct function_t;
-
-using func_id_t = uint64_t;
-using unit = uint64_t;
 
 using func_map = std::unordered_map<func_id_t, function_t>;
 
@@ -32,3 +29,16 @@ using func_t = ret_t(RAW_EXEC_ARGS);
 }; // namespace _N_EXEC
 
 
+
+struct flag_data {
+	bool were_equal = false;
+	bool first_was_bigger = false;
+};
+
+struct frame_t {
+	const instrutction_t *instr;
+	unit *stack_start;
+	unit *stack_head;
+	flag_data flags;
+	func_id_t cur_func_id;
+};
