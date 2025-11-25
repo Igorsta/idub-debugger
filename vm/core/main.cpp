@@ -3,14 +3,14 @@
 #include "config.hpp"
 #include "debug.h"
 #include "defer.h"
-#include "parse.hpp"
-#include "prnt.hpp"
 #include "exec.hpp"
-#include "memory.hpp"
 #include "inline.h"
 #include "io_handler.hpp"
+#include "memory.hpp"
 #include "musttail.h"
 #include "opcode_def.hpp"
+#include "parse.hpp"
+#include "prnt.hpp"
 #include <bits/stdc++.h>
 #include <cstddef>
 #include <cstdint>
@@ -110,8 +110,6 @@ static const std::unordered_map<_N_EXEC::func_t *, _N_PRNT::func_t *> dict = {
 	APPLY_TO_SIMPLE(PRNT_ENTRY) APPLY_TO_JUMP(PRNT_ENTRY)};
 } // namespace _N_PRNT_UTILS
 
-
-
 struct thread_dbg_data_t {
 
 	struct func_dbg_data_t {
@@ -159,10 +157,7 @@ struct thread_dbg_data_t {
 		CORE_ASSERT(val.has_value(), "Why are you trying to print a non-existant function?!");
 		return val.value();
 	}
-
-
 };
-
 
 struct thread_t {
 	func_map functions;
@@ -170,10 +165,12 @@ struct thread_t {
 	memory_space memory;
 
 	bool running = false;
+	const instrutction_t *instr;
+	frame_t *frame;
 
 	auto init() {
-		const instrutction_t *instr = functions.at(main_id).body.data();
-		auto frame = memory.CALL_STACK.get();
+		instr = functions.at(main_id).body.data();
+		frame = memory.CALL_STACK.get();
 		auto mem = &memory;
 
 		frame->stack_head = memory.MEM_STACK.get();
@@ -182,29 +179,27 @@ struct thread_t {
 
 		memory.HEAP.allocated.clear();
 
-		return std::make_tuple(instr, frame);
+		return;
 	}
 
 	void start_execution() {
-		auto [instr, frame] = init();
+		init();
 		try {
-			exec(instr, frame);
+			exec();
 		} catch (unit result) {
 			// std::print("The program has ended with a result {}\n", result);
 		}
 	}
 
-	void exec(const instrutction_t *&instr, frame_t *&frame) {
+	void exec() {
 		{
 			instr += instr->action(instr, &memory, frame, &functions);
 		}
 
-		MUST_TAIL return exec(instr, frame);
+		MUST_TAIL return exec();
 	}
 
-	INLINE void exec_single(const instrutction_t *&instr, frame_t *&frame, thread_dbg_data_t &dbg) {
-		frame->instr = instr;
-
+	INLINE void exec_single(thread_dbg_data_t &dbg) {
 		try {
 			instr += instr->action(instr, &memory, frame, &functions);
 		} catch (unit result) {
@@ -212,11 +207,12 @@ struct thread_t {
 		}
 	}
 
-	void exec(const instrutction_t *&instr, frame_t *&frame, thread_dbg_data_t &dbg) {
+	void exec(thread_dbg_data_t &dbg) {
+		frame->instr = instr;
 		dbg.stop_exec(to_pos(instr, frame), *this);
-		exec_single(instr, frame, dbg);
+		exec_single(dbg);
 
-		MUST_TAIL return exec(instr, frame, dbg);
+		MUST_TAIL return exec(dbg);
 	}
 
 	code_pos_t to_pos(const instrutction_t *const &instr, frame_t *const &frame) {
@@ -238,9 +234,9 @@ struct thread_t {
 		return (ans != 'y');
 	}
 
-	void safe_exec(const instrutction_t *&instr, frame_t *&frame, thread_dbg_data_t &dbg) {
+	void safe_exec(thread_dbg_data_t &dbg) {
 		try {
-			exec(instr, frame, dbg);
+			exec(dbg);
 		} catch (unit &res) {
 			std::println("program ended normally with {}", res);
 			running = false;
@@ -249,10 +245,9 @@ struct thread_t {
 		}
 	}
 
-	void safe_next(const instrutction_t *&instr, frame_t *&frame, thread_dbg_data_t &dbg,
-				   bool prnt = false) {
+	void safe_next(thread_dbg_data_t &dbg, bool prnt = false) {
 		try {
-			exec_single(instr, frame, dbg);
+			exec_single(dbg);
 
 			if (prnt) {
 				show_pos(instr, frame, dbg, true);
@@ -267,7 +262,7 @@ struct thread_t {
 
 	void start_debug_session(thread_dbg_data_t &dbg) {
 		std::string input;
-		auto [instr, frame] = init();
+		init();
 
 		while (true) {
 
@@ -283,9 +278,9 @@ struct thread_t {
 					continue;
 				}
 
-				std::tie(instr, frame) = init();
+				init();
 				running = true;
-				safe_exec(instr, frame, dbg);
+				safe_exec(dbg);
 				continue;
 			}
 
@@ -294,7 +289,7 @@ struct thread_t {
 					continue;
 				}
 
-				std::tie(instr, frame) = init();
+				init();
 				running = true;
 				show_pos(instr, frame, dbg, true);
 
@@ -307,7 +302,7 @@ struct thread_t {
 					continue;
 				}
 
-				safe_next(instr, frame, dbg, true);
+				safe_next(dbg, true);
 				continue;
 			}
 
@@ -327,7 +322,7 @@ struct thread_t {
 					continue;
 				}
 
-				show_call_stack(frame, dbg);
+				show_call_stack(dbg);
 				continue;
 			}
 
@@ -337,8 +332,8 @@ struct thread_t {
 					continue;
 				}
 
-				safe_next(instr, frame, dbg);
-				safe_exec(instr, frame, dbg);
+				safe_next(dbg);
+				safe_exec(dbg);
 				continue;
 			}
 
@@ -428,7 +423,9 @@ struct thread_t {
 
 		auto [func_id, pos] = to_pos(instr, frame);
 		auto func_name_opt = dbg.function_names.by_second(func_id);
-		CORE_ASSERT(func_name_opt.has_value())
+		if (!func_name_opt.has_value()) {
+			CORE_ASSERT(func_name_opt.has_value())
+		}
 		std::println("#{:<5} func: {:<15} [id: {:<3}] instr no: {:<8}", idx, func_name_opt.value(),
 					 func_id, pos);
 	}
@@ -495,12 +492,13 @@ struct thread_t {
 		}
 	}
 
-	void show_call_stack(frame_t *frame, thread_dbg_data_t &dbg) {
+	void show_call_stack(thread_dbg_data_t &dbg) {
 		auto bottom = memory.CALL_STACK.get();
 		auto top = frame;
-		while (frame >= bottom) {
-			show_pos(frame->instr, frame, dbg, false, top - frame);
-			frame--;
+		auto frame_to_prnt = frame;
+		while (frame_to_prnt >= bottom) {
+			show_pos(frame_to_prnt->instr, frame_to_prnt, dbg, false, top - frame_to_prnt);
+			frame_to_prnt--;
 		}
 	}
 };
@@ -630,24 +628,24 @@ public:
 ///////////////////// PARSING INSTRUCTIONS ////////////////////////////
 
 namespace _N_PARSE_UTILS {
-	constexpr std::string regex_arg_t(const operand_t &arg) {
-		switch (arg) {
-		case operand_t::DECIMAL_NUM:
-			return "(\\d+)";
-		case operand_t::REGISTER_ID:
-			return "\\$([A-Za-z0-9_]+)";
-		case operand_t::REG_WITH_PTR:
-			return "\\[\\$([A-Za-z0-9_]+)\\]";
-		case operand_t::FUNC_NAME:
-			return "([A-Za-z0-9_]+)";
-		case operand_t::LABEL_ID:
-			return "([A-Za-z0-9_]+)";
-		}
-	
-		//@todo make it BEAUTIFUL!
-		CORE_ASSERT(false, "operand {} does not have a defined regex", int(arg));
-	};
-}
+constexpr std::string regex_arg_t(const operand_t &arg) {
+	switch (arg) {
+	case operand_t::DECIMAL_NUM:
+		return "(\\d+)";
+	case operand_t::REGISTER_ID:
+		return "\\$([A-Za-z0-9_]+)";
+	case operand_t::REG_WITH_PTR:
+		return "\\[\\$([A-Za-z0-9_]+)\\]";
+	case operand_t::FUNC_NAME:
+		return "([A-Za-z0-9_]+)";
+	case operand_t::LABEL_ID:
+		return "([A-Za-z0-9_]+)";
+	}
+
+	//@todo make it BEAUTIFUL!
+	CORE_ASSERT(false, "operand {} does not have a defined regex", int(arg));
+};
+} // namespace _N_PARSE_UTILS
 
 constexpr std::string regex_func() {
 	using _N_PARSE_UTILS::regex_arg_t;
@@ -822,7 +820,7 @@ void parse_line(const std::string &line, thread_builder_t &builder) {
 	static const std::unordered_map<std::string, std::pair<std::regex, func_t *>> str_to_instr = {
 		{"#", {std::regex("\\s*(?:#.*)?"), nop}},
 		{";", {std::regex("\\s*;\\s*(?:#.*)?"), nop}},
-		
+
 #define parse_pos(macro) {nameof(macro), {make_opcode_pattern(nameof(macro)), &macro}},
 
 		APPLY_TO_ALL(parse_pos)};
