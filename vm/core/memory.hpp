@@ -1,7 +1,7 @@
 #pragma once
 #include "heap.hpp"
 #include "io_handler.hpp"
-#include "exec.hpp"
+#include "frame.hpp"
 
 struct memory_space {
 	const size_t MEM_STACK_SIZE;

@@ -1,10 +1,8 @@
 #pragma once
 
 #include "exec.hpp"
-
-struct thread_dbg_data_t;
-struct code_pos_t;
-struct thread_t;
+#include "debug_data.hpp"
+#include "thread.hpp"
 
 #define _N_PRNT		  prnt
 #define _N_PRNT_UTILS _N_PARSE::utils
@@ -15,3 +13,8 @@ namespace _N_PRNT {
 
 using func_t = void(PRNT_OPCODE_ARGS);
 }; // namespace _N_PRNT
+
+
+namespace _N_PRNT_UTILS {
+std::unordered_map<_N_EXEC::func_t *, _N_PRNT::func_t *> const& dict();
+} // namespace _N_PRNT_UTILS
