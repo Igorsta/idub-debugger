@@ -1,5 +1,5 @@
 #include "thread.hpp"
-#include "function.hpp"
+#include "exec.hpp"
 #include "musttail.h"
 #include "debug_data.hpp"
 
@@ -11,6 +11,7 @@ void thread_t::init() {
 	frame->stack_head = memory.MEM_STACK.get();
 	frame->stack_start = memory.MEM_STACK.get();
 	frame->cur_func_id = main_id;
+	frame->instr = instr;
 
 	memory.HEAP.allocated.clear();
 
@@ -58,7 +59,7 @@ code_pos_t thread_t::to_pos(const instrutction_t *const &instr, frame_t *const &
 	};
 }
 
-size_t thread_t::no_of_frames() { return frame - memory.CALL_STACK.get(); }
+size_t thread_t::no_of_frames() { return frame - memory.CALL_STACK.get() + 1; }
 
 code_pos_t thread_t::call_stack_top(size_t n) {
 	CORE_ASSERT(n < no_of_frames());

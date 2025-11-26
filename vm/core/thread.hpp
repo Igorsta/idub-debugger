@@ -1,7 +1,7 @@
 #pragma once
 #include "code_pos.hpp"
 #include "memory.hpp"
-#include "function.hpp"
+#include "exec.hpp"
 
 struct thread_dbg_data_t;
 

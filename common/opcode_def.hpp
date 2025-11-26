@@ -1,5 +1,9 @@
 #pragma once
 
+#define STRINGIFY(x) #x
+#define nameof(x)	 STRINGIFY(x)
+
+
 #define STCK_INIT	init
 #define STCK_DEINIT deinit
 #define REG_TO_STCK reg_to_stack

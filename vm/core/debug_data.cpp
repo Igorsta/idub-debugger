@@ -57,6 +57,7 @@ void thread_dbg_data_t::safe_exec(thread_t &thr) {
 void thread_dbg_data_t::safe_next(thread_t &thr, bool prnt) {
 	try {
 		thr.exec_single(*this);
+		thr.frame->instr = thr.instr;
 
 		if (prnt) {
 			show_pos(thr, true);

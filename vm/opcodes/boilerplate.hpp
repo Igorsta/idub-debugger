@@ -1,40 +1,5 @@
 #pragma once
 
-#include "exec.hpp"
-#include "debug_data.hpp"
-#include "thread_builder.hpp"
-#include "thread.hpp"
-#include "args.hpp"
-#include <regex>
-
-
-namespace _N_PARSE {
-#define PARSE_OPCODE_ARGS                                                                          \
-	[[maybe_unused]] thread_builder_t &builder, [[maybe_unused]] const std::smatch &matches
-
-using func_t = void(PARSE_OPCODE_ARGS);
-}; // namespace _N_PARSE
-
-
-
-namespace _N_PARSE_UTILS {
-void nop(PARSE_OPCODE_ARGS);
-
-constexpr std::string regex_func() {
-	return "\\s*fun\\s+" + regex_arg_t(operand_t::FUNC_NAME) + "\\s*\\(\\s*" +
-		   regex_arg_t(operand_t::DECIMAL_NUM) + "\\s*\\)" + "\\s*->\\s*" +
-		   regex_arg_t(operand_t::DECIMAL_NUM) + "\\s*:\\s*" + "\\s*\\{([^}]*)\\}";
-}
-
-std::regex make_opcode_pattern(std::string op_name);
-
-void parse_line(const std::string &line, thread_builder_t &builder);
-
-std::tuple<thread_t, thread_dbg_data_t> file_parse(std::string &content);
-
-} // namespace _N_PARSE_UTILS
-
-
 #define PARSE_SIMPLE_IMPL(macro)                                                                   \
 	void _N_PARSE::macro(PARSE_OPCODE_ARGS) {                                                      \
 		instrutction_t instr{&::_N_EXEC::macro};                                                   \
@@ -45,6 +10,7 @@ std::tuple<thread_t, thread_dbg_data_t> file_parse(std::string &content);
 		}                                                                                          \
 		builder.func_builder.add_instr(instr);                                                     \
 	}
+
 
 #define PARSE_JUMPS_IMPL(macro)                                                                    \
 	void _N_PARSE::macro(PARSE_OPCODE_ARGS) {                                                      \
@@ -63,4 +29,30 @@ std::tuple<thread_t, thread_dbg_data_t> file_parse(std::string &content);
 		}                                                                                          \
                                                                                                    \
 		builder.func_builder.add_jump(instr);                                                      \
+	}
+
+#define PRNT_IMPL(macro)                                                                           \
+	void _N_PRNT::macro(PRNT_OPCODE_ARGS) {                                                        \
+		std::cout << nameof(macro);                                                                \
+		auto [func_id, pos] = code_pos;                                                            \
+		instrutction_t *instr = &thr.functions[func_id].body[pos];                                 \
+		const auto &args = ::_N_ARGS::macro();                                                     \
+		for (int i = 0; i < args.size(); i++) {                                                    \
+			std::cout << " " << _N_PRNT_UTILS::print_arg(instr->arg[i], func_id, args[i], dbg);    \
+		}                                                                                          \
+		std::cout << "\n";                                                                         \
+	}
+
+
+#define EXEC_ARITH_IN_PLACE_IMPL(macro, oper)                                                      \
+	_N_EXEC::ret_t _N_EXEC::macro(RAW_EXEC_ARGS) {                                                 \
+		using namespace _N_EXEC_UTILS;                                                             \
+                                                                                                   \
+		auto arg0 = instr->arg[0];                                                                 \
+		auto arg1 = instr->arg[1];                                                                 \
+		auto &reg0 = get_reg(arg0, FWD_RAW_ARGS);                                                  \
+		auto &reg1 = get_reg(arg1, FWD_RAW_ARGS);                                                  \
+                                                                                                   \
+		reg0 oper reg1;                                                                            \
+		return 1;                                                                                  \
 	}
