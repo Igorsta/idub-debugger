@@ -9,7 +9,7 @@
 #include "inline.h"
 
 using exec_func_t = void(size_t);
-constexpr size_t STEPS = 1e11;
+constexpr size_t STEPS = 1e9;
 
 int rare_event_1_over_n2(uint64_t n) {
 	return (n % STEPS == 0) ? 1 : 0;
