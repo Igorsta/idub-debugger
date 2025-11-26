@@ -1,5 +1,5 @@
 #pragma once
-#include "config.hpp"
+#include "../config/config.hpp"
 
 struct instrutction_t;
 

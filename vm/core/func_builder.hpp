@@ -2,7 +2,7 @@
 
 #include "debug_data.hpp"
 #include "defer.h"
-#include "config.hpp"
+#include "../config/config.hpp"
 #include "exec.hpp"
 
 struct func_builder_t {

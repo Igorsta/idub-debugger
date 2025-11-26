@@ -1,8 +1,8 @@
 #pragma once
 
 #include "config.hpp"
-#include "prnt.hpp"
-#include "thread_builder.hpp"
+#include "../parse/prnt.hpp"
+#include "../core/thread_builder.hpp"
 
 
 enum class operand_t {

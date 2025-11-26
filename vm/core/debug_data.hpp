@@ -1,8 +1,8 @@
 #pragma once
 
 #include "exec.hpp"
-#include "code_pos.hpp"
-#include "io_handler.hpp"
+#include "config/code_pos.hpp"
+#include "../memory/io_handler.hpp"
 #include <functional>
 
 struct thread_t;
@@ -12,6 +12,10 @@ struct thread_t;
 
 struct dbg_require_stop {
 	std::function<void()> inform;
+};
+
+struct failed_command {
+	std::string why;
 };
 
 struct thread_dbg_data_t {
@@ -34,6 +38,7 @@ struct thread_dbg_data_t {
 	io_handler_t cli_io{io_handler_t::INPUT_INTERFACE::SINGLE_LINE_OR_PREV};
 
 	bool running = false;
+	bool active = true;
 
 	std::optional<breakpoints_id> hit_breakpoint(const code_pos_t &position);
 
@@ -42,6 +47,31 @@ struct thread_dbg_data_t {
 	void stop_exec(code_pos_t position, thread_t &thread);
 
 	void handle_result(unit res);
+
+	void confirm_if_running();
+	void ensure_is_running();
+
+	void exec_cmd(const std::string& input, thread_t& thr);
+
+	void handle_run(thread_t& thr);
+
+	void handle_start(thread_t& thr);
+
+	void handle_next(thread_t &thr);
+
+	void handle_frame(thread_t &thr);
+
+	void handle_backtrace(thread_t &thr);
+
+	void handle_continue(thread_t &thr);
+
+	void handle_stop(thread_t& thr);
+
+	void handle_quit(thread_t& thr);
+
+	void handle_break(thread_t& thr);
+
+	void handle_info(thread_t& thr);
 
 	std::string get_func_name(func_id_t id) const;
 

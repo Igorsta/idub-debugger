@@ -1,9 +1,9 @@
 #pragma once
 
 #include <cstddef>
-#include "config.hpp"
+#include "../config/config.hpp"
 #include <unordered_map>
-#include "memory.hpp"
+#include "../memory/memory.hpp"
 #include "inline.h"
 
 struct instrutction_t;

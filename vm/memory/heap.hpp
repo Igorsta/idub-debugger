@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config.hpp"
+#include "../config/config.hpp"
 #include "debug.h"
 #include <memory>
 #include <set>

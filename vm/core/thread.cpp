@@ -36,16 +36,16 @@ void thread_t::exec() {
 }
 
 void thread_t::exec_single(thread_dbg_data_t &dbg) {
+	dbg.stop_exec(to_pos(instr, frame), *this);
 	try {
 		instr += instr->action(instr, &memory, frame, &functions);
+		frame->instr = instr;
 	} catch (unit result) {
 		dbg.handle_result(result);
 	}
 }
 
 void thread_t::exec(thread_dbg_data_t &dbg) {
-	frame->instr = instr;
-	dbg.stop_exec(to_pos(instr, frame), *this);
 	exec_single(dbg);
 
 	MUST_TAIL return exec(dbg);

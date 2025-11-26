@@ -1,6 +1,6 @@
-#include "config.hpp"
+#include "../config/config.hpp"
 #include "debug.h"
-#include "parse.hpp"
+#include "../parse/parse.hpp"
 #include "thread.hpp"
 #include "debug_data.hpp"
 #include <filesystem>

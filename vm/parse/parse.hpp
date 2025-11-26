@@ -1,10 +1,10 @@
 #pragma once
 
-#include "exec.hpp"
-#include "debug_data.hpp"
-#include "thread_builder.hpp"
-#include "thread.hpp"
-#include "args.hpp"
+#include "../core/exec.hpp"
+#include "../core/debug_data.hpp"
+#include "../core/thread_builder.hpp"
+#include "../core/thread.hpp"
+#include "../config/args.hpp"
 #include <regex>
 
 

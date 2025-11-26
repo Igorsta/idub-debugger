@@ -1,8 +1,8 @@
 #pragma once
 
-#include "exec.hpp"
-#include "debug_data.hpp"
-#include "thread.hpp"
+#include "../core/exec.hpp"
+#include "../core/debug_data.hpp"
+#include "../core/thread.hpp"
 #include <iostream>
 
 namespace _N_PRNT {

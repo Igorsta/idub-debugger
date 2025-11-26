@@ -1,8 +1,8 @@
-#include "args.hpp"
-#include "debug_data.hpp"
-#include "thread.hpp"
+#include "../config/args.hpp"
+#include "../core/debug_data.hpp"
+#include "../core/thread.hpp"
 #include "opcode_def.hpp"
-#include "opcodes/opcode.hpp"
+#include "../opcodes/opcode.hpp"
 
 
 namespace _N_PARSE_UTILS {
