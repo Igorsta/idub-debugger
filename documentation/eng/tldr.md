@@ -15,15 +15,18 @@ There is not guarantee about state of the registers after a calling another func
 # Eror handling/verification
 There is no static analysis of the bytecode. There are dynamic checks to ensure the proper behavious and inform the user if an error were to occur. It introduces delay, but makes handling errors much simpler.
 
+# Implementation details
+Project was compiled with C++23, CMake 3.15 and clang-format 18.1.3. on WSL.
+The project was developed with intent to be built by running 
+```
+./utils/build.sh
+```
+
 # Debugger
 Code can be run with both __run__ and __debug__ mode. The debug mode was inspired by the GDB, though it is far less rich in termsof functionality.
 
-A quick demo can be used by building
+A quick demo can be used by running
 ```
 ./build/bin/my_vm debug ./example/cool/factorial_rec
 ```
-
-# Implementation details
-Project was compiled with C++23, CMake 3.15 and clang-format 18.1.3. on WSL,
-The project was developed with intent  be built by running *./utils/build.sh*.
 
