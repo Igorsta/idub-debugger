@@ -71,7 +71,9 @@ struct thread_dbg_data_t {
 
 	void handle_break(thread_t& thr);
 
-	void handle_info(thread_t& thr);
+	void handle_info(thread_t &thr);
+
+	void handle_help(thread_t &thr);	
 
 	std::string get_func_name(func_id_t id) const;
 

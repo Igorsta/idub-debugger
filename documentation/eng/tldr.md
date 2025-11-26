@@ -2,7 +2,7 @@
 - _N_PARSE : responsible for parsing lines of the code and the entitre files
 - _N_PRNT : responsible for printing the instructions (used only for debugging)
 - _N_EXEC : responsible for printing the actual execution of the instructions
-- _N_ARGS : responsible for printing handling the arguments of each type of opcode
+- _N_ARGS : responsible for handling the arguments of each type of opcode
 
 Each of those namespces has a nested namespace _UTILS, which allows for hiding the details of implementation.
 Every type of opcodes introduces a corresponding function in some of those namespaces - most of them (also called as *SIMPLE*) in all of those namespaces.
@@ -23,10 +23,11 @@ The project was developed with intent to be built by running
 ```
 
 # Debugger
-Code can be run with both __run__ and __debug__ mode. The debug mode was inspired by the GDB, though it is far less rich in termsof functionality.
+Code can be run with both __run__ and __debug__ mode. The debug mode was inspired by the GDB, though it is far less rich in terms of functionality.
 
-A quick demo can be used by running
+A quick demo can be made by running
 ```
 ./build/bin/my_vm debug ./example/cool/factorial_rec
 ```
 
+When running debugger CLI, call "help" or "h" to view the set of supported commands 

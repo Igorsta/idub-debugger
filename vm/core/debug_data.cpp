@@ -195,6 +195,25 @@ void thread_dbg_data_t::handle_info(thread_t &thr) {
 	throw failed_command{std::format("uknown specifier \"{}\"", spec)};
 }
 
+void thread_dbg_data_t::handle_help(thread_t &thr) {
+	std::println("Welcome to the draft implementation of a debugger!");
+	std::println("Here are currently implemented functions\n");
+	std::println("{:<15} - execute the program as if in normal mode", "run/r");
+	std::println("{:<15} - start the program in step-by-step mode", "start/s");
+	std::println("{:<15} - show the currently executed instruction", "frame");
+	std::println("{:<15} - show the current call stack", "backtrace/bt");
+	std::println("{:<15} - continue execution as if in normal mode", "continute/c");
+	std::println("{:<15} - leave the step-by-step mode", "stop");
+	std::println("{:<15} - leave the debug mode", "quit/q");
+	std::println("{:<15} - set a breakpoint at a given position", "break/b [...]");
+	std::println(
+		"{:<15} - general way to get the information about heap/memory stack/registers", "info [...]");
+	std::println("{:<15} - print this message", "help/h");
+
+	std::println("\nquick note: If you press \"Enter\" the console will execute your last command");
+	
+	return;
+}
 
 void thread_dbg_data_t::exec_cmd(const std::string &input, thread_t &thr) {
 	if (input == "run" || input == "r") {
@@ -233,8 +252,12 @@ void thread_dbg_data_t::exec_cmd(const std::string &input, thread_t &thr) {
 		return handle_break(thr);
 	}
 
-	if (input == "indo") {
+	if (input == "info") {
 		return handle_info(thr);
+	}
+
+	if (input == "help" || input == "h") {
+		return handle_help(thr);
 	}
 
 	throw failed_command(std::format("unknown commnd: \"{}\"", input));
@@ -309,7 +332,7 @@ void thread_dbg_data_t::show_reg(const std::string &reg, code_pos_t pos, thread_
 
 	if (reg == "") {
 		for (auto [reg_name, reg_id] : dbg_reg.map_1_to_2) {
-			std::println("{:<10}: {:<10}", reg_name, exec_reg[reg_id]);
+			std::println("{:<15}: {:<15}", reg_name, exec_reg[reg_id]);
 		}
 
 		return;
@@ -322,7 +345,7 @@ void thread_dbg_data_t::show_reg(const std::string &reg, code_pos_t pos, thread_
 	}
 
 	auto reg_id = it3.value();
-	std::println("{:<10}: {:<10}", reg, exec_reg[reg_id]);
+	std::println("{:<15}: {:<15}", reg, exec_reg[reg_id]);
 }
 
 void thread_dbg_data_t::show_heap(unit ptr1, unit ptr2, thread_t &thr) {
